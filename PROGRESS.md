@@ -2,7 +2,7 @@
 
 ## Status
 
-Milestone 0-4 style CLI flow is implemented and verified with the mock pipeline. Pi runtime integration is project-owned and no longer depends on user-level Codex or Pi config. OpenAI Codex OAuth auth is configured through `models.*.auth` and `.conject/pi/auth.json`.
+Milestone 0-4 style CLI flow is implemented and verified with the mock pipeline. Pi runtime integration is project-owned and no longer depends on user-level Codex or Pi config. OpenAI Codex OAuth auth is configured through `models.*.auth` and defaults to Conject-owned global storage at `~/.conject/auth/auth.json`.
 
 ## Completed
 
@@ -30,9 +30,12 @@ Milestone 0-4 style CLI flow is implemented and verified with the mock pipeline.
 - Removed normal runtime fallback to global/user-level Pi configuration.
 - Added explicit Pi provider/model/auth validation and `.conject/`-scoped Pi agentDir enforcement.
 - Added `conject pi-check` to validate project Pi runtime readiness.
-- Added the `models.*.auth` shape for config-owned Pi credentials, with OpenAI Codex OAuth stored under `.conject/pi/auth.json` and legacy `apiKeyEnv` compatibility.
-- Added `conject pi login`, `conject pi logout`, and `conject pi status` commands for project-local Pi auth.
-- Adjusted `conject pi login` so the paste-code prompt only appears with `--manual`; normal login waits for the browser callback.
+- Added the `models.*.auth` shape for config-owned credentials, with OpenAI Codex OAuth defaulting to global Conject auth storage at `~/.conject/auth/auth.json` and legacy `apiKeyEnv` compatibility.
+- Added `conject auth login`, `conject auth logout`, and `conject auth status` commands; `conject pi ...` remains a compatibility alias.
+- Adjusted browser login so the paste-code prompt only appears with `--manual`; normal login waits for the browser callback and exits after storing credentials.
+- Rebranded user-facing auth to Conject auth, including status/login/logout messages and docs.
+- Added the first Ink TUI: plain `conject` opens a run dashboard and command cockpit.
+- Added `pnpm link:cli` for local development installs of the `conject` terminal command.
 - Added `conject run <run-id> --runtime mock|pi` for explicit pipeline runtime selection.
 - Extended implementation packs with optional `files[]` content, safe materialization under `implementations/`, and path traversal checks.
 - Added `conject implement <run-id> <hypothesis-id> --runtime mock|pi` so Builder can run through the runtime interface before pack materialization.
@@ -43,16 +46,16 @@ Milestone 0-4 style CLI flow is implemented and verified with the mock pipeline.
 - Mock/offline MVP path is working through ranked hypotheses, Markdown export, and implementation pack scaffolding.
 - Opt-in tool-backed Researcher path is working with provider calls and persisted tool-call logs.
 - Evidence bundles now contain deterministic source-linked claims instead of raw abstract/snippet summaries only.
-- `pnpm cli pi-check` now validates `models.default.provider`, `models.default.model`, and `models.default.auth`; for OpenAI Codex it fails early until `pnpm cli pi login` creates `.conject/pi/auth.json`.
+- `pnpm cli pi-check` now validates `models.default.provider`, `models.default.model`, and `models.default.auth`; for OpenAI Codex it fails early until `pnpm cli auth login` creates Conject auth credentials.
 - Runtime-backed Builder packs can be materialized when the runtime produces an `implementation_pack`.
 
 ## Remaining
 
-- Complete OpenAI Codex OAuth login and run a live Pi Strategist/Reviewer/Builder smoke.
+- Run a live Pi Strategist/Reviewer/Builder smoke after Conject global auth is verified.
 - Add Pi-assisted Reviewer/Researcher reasoning on top of deterministic extracted evidence.
 - Expose paper/web provider adapters as Pi custom tools if we want Pi-driven search instead of deterministic tool-backed Researcher search.
 - Make scoped Pi Builder the default path once live Pi output quality is verified.
-- Add Ink TUI after CLI/artifact flow stabilizes.
+- Expand the Ink TUI with richer artifact browsing and direct file opening.
 
 ## API Keys
 
@@ -61,4 +64,4 @@ Milestone 0-4 style CLI flow is implemented and verified with the mock pipeline.
 - Semantic Scholar: optional `SEMANTIC_SCHOLAR_API_KEY`.
 - Tavily: required for hosted web search via `TAVILY_API_KEY`.
 - SearXNG: no key, but requires `providers.web.searxng.baseUrl`.
-- Pi model provider: required only for `--runtime pi`; default config uses `models.default.auth.type: openai-codex` and requires `pnpm cli pi login`. API-key providers can use `models.default.auth.type: apiKeyEnv`.
+- Pi model provider: required only for `--runtime pi`; default config uses `models.default.auth.type: openai-codex` and requires `pnpm cli auth login`. API-key providers can use `models.default.auth.type: apiKeyEnv`.

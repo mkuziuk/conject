@@ -1,4 +1,4 @@
-import type { Artifact, ArtifactType, Job, Run } from "@conject/artifacts";
+import type { Artifact, ArtifactType, Event, Job, Run } from "@conject/artifacts";
 import { ArtifactSchema, createId } from "@conject/artifacts";
 import type { ConjectConfig } from "@conject/config";
 import type { Kysely } from "kysely";
@@ -244,6 +244,26 @@ export class ConjectRepository {
         created_at: new Date().toISOString()
       })
       .execute();
+  }
+
+  async listEvents(runId: string, limit = 50): Promise<Event[]> {
+    const rows = await this.db
+      .selectFrom("events")
+      .selectAll()
+      .where("run_id", "=", runId)
+      .orderBy("created_at", "desc")
+      .limit(limit)
+      .execute();
+    return rows
+      .map((row) => ({
+        id: row.public_id,
+        runId: row.run_id,
+        jobId: row.job_id,
+        type: row.type,
+        payload: JSON.parse(row.payload_json) as Record<string, unknown>,
+        createdAt: row.created_at
+      }))
+      .reverse();
   }
 
   async addToolCall(input: {

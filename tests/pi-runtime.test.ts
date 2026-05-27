@@ -243,6 +243,41 @@ describe("PiAgentRuntime", () => {
     expect(sdk.sessionOptions?.authStorage).toBe(sdk.fileAuthStorage);
   });
 
+  it("uses Conject project auth storage for project-scoped OpenAI Codex auth", async () => {
+    const session = new FakePiSession([
+      JSON.stringify({
+        outputArtifacts: [
+          {
+            type: "idea",
+            json: {
+              id: "IDEA-001",
+              title: "Idea",
+              summary: "Summary",
+              rationale: "Rationale",
+              expectedValue: "Value",
+              possibleRisks: [],
+              searchQueries: ["query"]
+            }
+          }
+        ]
+      })
+    ]);
+    const sdk = new FakePiSdk(session);
+    sdk.fileAuthStorage.storedProviders.add("openai-codex");
+    const runtime = new PiAgentRuntime({ sdk, cwd: "/tmp/conject-test", env: {} });
+
+    await runtime.runAgentJob({
+      runId: "run-1",
+      jobId: "job-1",
+      agentId: "strategist",
+      inputArtifacts: [],
+      prompt: "Prompt",
+      config: projectScopeCodexConfig()
+    });
+
+    expect(sdk.createdAuthPath).toBe("/tmp/conject-test/.conject/auth/auth.json");
+  });
+
   it("fails before session creation when OpenAI Codex OAuth credentials are missing", async () => {
     const session = new FakePiSession([]);
     const sdk = new FakePiSdk(session);
@@ -257,7 +292,7 @@ describe("PiAgentRuntime", () => {
         prompt: "Prompt",
         config: codexConfig()
       })
-    ).rejects.toThrow("Missing Pi OAuth credentials for openai-codex at .conject/pi/auth.json. Run: pnpm cli pi login");
+    ).rejects.toThrow("Missing Conject auth credentials for openai-codex at .conject/pi/auth.json. Run: pnpm cli auth login");
     expect(sdk.sessionOptions).toBeUndefined();
   });
 
@@ -316,6 +351,14 @@ describe("PiAgentRuntime", () => {
     expect(result).toEqual({ ok: true });
     expect(sdk.createdAuthPath).toBe("/tmp/conject-test/.conject/pi/auth.json");
   });
+
+  it("resolves default OpenAI Codex auth to Conject global storage", async () => {
+    const sdk = new FakePiSdk(new FakePiSession([]));
+    sdk.fileAuthStorage.storedProviders.add("openai-codex");
+    const result = await checkPiSdkAvailability(globalCodexConfig(), {}, { cwd: "/tmp/conject-test", sdk });
+    expect(result).toEqual({ ok: true });
+    expect(sdk.createdAuthPath).toMatch(/\/\.conject\/auth\/auth\.json$/);
+  });
 });
 
 function piConfig(): ConjectConfig {
@@ -335,6 +378,28 @@ function codexConfig(): ConjectConfig {
     provider: "openai-codex",
     model: "gpt-5.5",
     auth: { type: "openai-codex", storagePath: ".conject/pi/auth.json" },
+    thinking: "xhigh"
+  };
+  return config;
+}
+
+function globalCodexConfig(): ConjectConfig {
+  const config = structuredClone(defaultConfig);
+  config.models.default = {
+    provider: "openai-codex",
+    model: "gpt-5.5",
+    auth: { type: "openai-codex", scope: "global" },
+    thinking: "xhigh"
+  };
+  return config;
+}
+
+function projectScopeCodexConfig(): ConjectConfig {
+  const config = structuredClone(defaultConfig);
+  config.models.default = {
+    provider: "openai-codex",
+    model: "gpt-5.5",
+    auth: { type: "openai-codex", scope: "project" },
     thinking: "xhigh"
   };
   return config;

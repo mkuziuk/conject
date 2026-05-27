@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, relative, resolve } from "node:path";
 import { formatAgentProfileForPrompt, getAgentProfile } from "@conject/agents";
 import {
@@ -92,6 +93,7 @@ export type ResolvedPiModelAuth =
     }
   | {
       type: "openai-codex";
+      scope: "project" | "global";
       storagePath: string;
       authPath: string;
     };
@@ -116,7 +118,8 @@ export type PiAgentRuntimeOptions = {
 };
 
 const DEFAULT_CONJECT_PI_AGENT_DIR = ".conject/pi";
-const DEFAULT_CONJECT_PI_AUTH_PATH = ".conject/pi/auth.json";
+const DEFAULT_CONJECT_PROJECT_AUTH_PATH = ".conject/auth/auth.json";
+const DEFAULT_CONJECT_GLOBAL_AUTH_PATH = ".conject/auth/auth.json";
 const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
 
 const installedPiSdk: PiSdk = {
@@ -378,19 +381,24 @@ export function resolvePiModelConfig(
   if (provider !== "openai-codex") {
     throw new Error("models.default.auth.type openai-codex requires models.default.provider: openai-codex.");
   }
-  const storagePath = authConfig.storagePath?.trim() || DEFAULT_CONJECT_PI_AUTH_PATH;
-  const authPath = resolveConjectStatePath(
-    cwd,
-    storagePath,
-    "models.default.auth.storagePath",
-    "models.default.auth.storagePath must stay under .conject/ so Conject never reads user-level Codex or Pi configuration."
-  );
+  const scope = authConfig.scope ?? (authConfig.storagePath ? "project" : "global");
+  const projectStoragePath = authConfig.storagePath?.trim() || DEFAULT_CONJECT_PROJECT_AUTH_PATH;
+  const authPath =
+    scope === "global"
+      ? resolve(homedir(), DEFAULT_CONJECT_GLOBAL_AUTH_PATH)
+      : resolveConjectStatePath(
+          cwd,
+          projectStoragePath,
+          "models.default.auth.storagePath",
+          "models.default.auth.storagePath must stay under .conject/ so Conject never reads user-level Codex or Pi configuration."
+        );
   return {
     provider,
     model,
     auth: {
       type: "openai-codex",
-      storagePath,
+      scope,
+      storagePath: scope === "global" ? authPath : projectStoragePath,
       authPath
     },
     thinking: modelConfig.thinking
@@ -419,8 +427,8 @@ function hasStoredProviderAuth(authStorage: PiAuthStorage, provider: string): bo
 }
 
 function missingOAuthMessage(resolvedModel: ResolvedPiModelConfig): string {
-  const storagePath = resolvedModel.auth.type === "openai-codex" ? resolvedModel.auth.storagePath : DEFAULT_CONJECT_PI_AUTH_PATH;
-  return `Missing Pi OAuth credentials for ${resolvedModel.provider} at ${storagePath}. Run: pnpm cli pi login`;
+  const storagePath = resolvedModel.auth.type === "openai-codex" ? resolvedModel.auth.storagePath : DEFAULT_CONJECT_PROJECT_AUTH_PATH;
+  return `Missing Conject auth credentials for ${resolvedModel.provider} at ${storagePath}. Run: pnpm cli auth login`;
 }
 
 function resolveConjectStatePath(cwd: string, configuredPath: string, fieldName: string, outsideMessage: string): string {

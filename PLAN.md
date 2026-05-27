@@ -27,7 +27,7 @@ The system is artifact-first, not chat-first. Agents communicate through durable
 - Schema validation: zod.
 - Tests: vitest.
 - Storage: SQLite with `better-sqlite3` and Kysely.
-- TUI: Ink later; CLI and Markdown export first.
+- TUI: Ink command cockpit; `conject` opens the TUI, existing CLI subcommands remain.
 - Python: execution/helper language only, managed with `uv` first and documented `venv`/`pip` fallback.
 - Runtime state: ignored `.conject/`.
 - Project config: committed root `conject.yaml`.
@@ -91,13 +91,13 @@ Config includes:
 - web query/fetch limits;
 - paper and web providers;
 - model default plus per-agent overrides;
-- model auth from either environment variables or project-local OpenAI Codex OAuth storage;
+- model auth from either environment variables, project-local OAuth storage, or global Conject-owned auth storage;
 - scoring weights;
 - advanced per-agent budgets.
 
-Secrets are never committed by default. Credentials come from environment variables referenced by `conject.yaml` or project-local OAuth storage declared in `models.*.auth`. Pi runtime state and auth storage stay under `.conject/` and must not read normal user-level Codex or Pi config. Each run snapshots the effective config for reproducibility.
+Secrets are never committed by default. Credentials come from environment variables referenced by `conject.yaml`, project-local OAuth storage, or global Conject-owned auth storage declared in `models.*.auth`. The default OpenAI Codex credential file is `~/.conject/auth/auth.json`. Conject must not read normal user-level Codex or Pi config. Each run snapshots the effective config for reproducibility.
 
-Default Pi auth uses OpenAI Codex OAuth:
+Default Conject auth uses OpenAI Codex OAuth:
 
 ```yaml
 models:
@@ -107,7 +107,7 @@ models:
     thinking: xhigh
     auth:
       type: openai-codex
-      storagePath: .conject/pi/auth.json
+      scope: global
 ```
 
 Default presets:
@@ -159,14 +159,19 @@ conject open <run-id> <artifact-id>
 conject rank <run-id>
 conject implement <run-id> <hypothesis-id>
 conject export <run-id> --format markdown
-conject pi login
-conject pi logout
-conject pi status
+conject auth login
+conject auth logout
+conject auth status
+conject tui
 ```
 
 `conject run <run-id>` executes through ranking only. Builder runs only through `conject implement`.
 
 Commands use explicit run IDs for mutating and artifact-specific operations. Reruns resume by default and skip succeeded jobs unless forced.
+
+Plain `conject` opens the Ink TUI. The TUI is a keyboard-first dashboard for creating runs, executing mock/Pi pipelines, inspecting jobs/artifacts/rankings, exporting, generating implementation packs, and managing Conject auth. `conject pi ...` remains a compatibility alias for auth commands during the transition.
+
+Local development install uses `pnpm link:cli` to expose the `conject` terminal command from `@conject/cli`; npm publishing is later.
 
 ## Data Model
 
@@ -253,7 +258,9 @@ Builder generates:
 
 ### Milestone 6: Ink TUI
 
-- Build dashboard screens for existing runs, jobs, rankings, artifacts, and implementation triggers.
+- Build a Pi-like command cockpit for runs, jobs, rankings, artifacts, exports, implementation triggers, and Conject auth.
+- Make no-arg `conject` open the TUI and add `conject tui` as an explicit alias.
+- Keep all existing CLI subcommands operational for scripting.
 
 ## Testing
 

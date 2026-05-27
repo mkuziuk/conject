@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
+    "jsx": "react-jsx",
     "rootDir": "src",
     "outDir": "dist"
   },
@@ -14,5 +15,5 @@
     { "path": "../../packages/storage" },
     { "path": "../../packages/tools" }
   ],
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

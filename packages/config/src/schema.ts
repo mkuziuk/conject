@@ -23,6 +23,7 @@ export const AgentModelAuthSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("openai-codex"),
+    scope: z.enum(["project", "global"]).optional(),
     storagePath: z.string().min(1).optional()
   })
 ]);
@@ -133,7 +134,7 @@ export const defaultConfig: ConjectConfig = {
       thinking: "xhigh",
       auth: {
         type: "openai-codex",
-        storagePath: ".conject/pi/auth.json"
+        scope: "global"
       }
     },
     agents: {}

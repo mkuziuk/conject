@@ -17,7 +17,7 @@ describe("config", () => {
       expect(config.models.default).toMatchObject({
         provider: "openai-codex",
         model: "gpt-5.5",
-        auth: { type: "openai-codex", storagePath: ".conject/pi/auth.json" }
+        auth: { type: "openai-codex", scope: "global" }
       });
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -7,10 +7,20 @@ Start with:
 ```bash
 pnpm install
 pnpm cli init
+pnpm cli
 pnpm cli new "Find implementable ideas for robust IMF in hyperspectral unmixing"
 pnpm cli run <run-id>
 pnpm cli rank <run-id>
 pnpm cli export <run-id>
+```
+
+`pnpm cli` opens the Conject TUI. All subcommands remain available for scripts.
+
+For local development, link the terminal command after building:
+
+```bash
+pnpm link:cli
+conject
 ```
 
 You can force a runtime for the research pipeline:
@@ -26,14 +36,14 @@ The default run path uses a deterministic mock Researcher. To use configured pap
 TAVILY_API_KEY="..." pnpm cli run <run-id> --real-research
 ```
 
-Pi integration is isolated behind the runtime interface and is not required for default tests. The Pi SDK is a pinned project dependency, and Conject does not read your normal user-level Codex or Pi config. Check project Pi readiness with:
+The LLM runtime is isolated behind the runtime interface and is not required for default tests. The Pi SDK is a pinned implementation detail, and Conject does not read your normal user-level Codex or Pi config. Check Conject auth and LLM readiness with:
 
 ```bash
-pnpm cli pi status
+pnpm cli auth status
 pnpm cli pi-check
 ```
 
-The default Pi model config uses OpenAI Codex OAuth through Conject-owned project storage:
+The default model config uses OpenAI Codex OAuth through Conject-owned global auth storage:
 
 ```yaml
 runtime:
@@ -46,22 +56,22 @@ models:
     thinking: xhigh
     auth:
       type: openai-codex
-      storagePath: .conject/pi/auth.json
+      scope: global
 ```
 
-Run this once to create `.conject/pi/auth.json`:
+Run this once to create `~/.conject/auth/auth.json`:
 
 ```bash
-pnpm cli pi login
+pnpm cli auth login
 ```
 
 If the browser callback cannot complete, use the explicit paste-code fallback:
 
 ```bash
-pnpm cli pi login --manual
+pnpm cli auth login --manual
 ```
 
-`runtime.pi.agentDir` and `models.default.auth.storagePath` must stay under `.conject/`; the runtime passes that project-local auth store to Pi and does not use `~/.codex` or `~/.pi`.
+Project-local auth is still supported with `auth.scope: project`, which defaults to `.conject/auth/auth.json`; explicit legacy paths such as `.conject/pi/auth.json` still work. The runtime passes Conject-owned auth storage to the SDK and does not use `~/.codex` or `~/.pi`.
 
 API-key providers are still supported:
 
