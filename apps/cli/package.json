@@ -1,0 +1,26 @@
+{
+  "name": "@conject/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "conject": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@conject/artifacts": "workspace:*",
+    "@conject/config": "workspace:*",
+    "@conject/core": "workspace:*",
+    "@conject/export": "workspace:*",
+    "@conject/runtime": "workspace:*",
+    "@conject/storage": "workspace:*",
+    "@conject/tools": "workspace:*",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

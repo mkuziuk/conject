@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/artifacts" },
+    { "path": "./packages/config" },
+    { "path": "./packages/ranking" },
+    { "path": "./packages/storage" },
+    { "path": "./packages/runtime" },
+    { "path": "./packages/tools" },
+    { "path": "./packages/agents" },
+    { "path": "./packages/export" },
+    { "path": "./packages/core" },
+    { "path": "./apps/cli" }
+  ]
+}

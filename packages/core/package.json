@@ -1,0 +1,20 @@
+{
+  "name": "@conject/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@conject/artifacts": "workspace:*",
+    "@conject/config": "workspace:*",
+    "@conject/runtime": "workspace:*",
+    "@conject/storage": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

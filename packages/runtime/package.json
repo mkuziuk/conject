@@ -1,0 +1,22 @@
+{
+  "name": "@conject/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@conject/agents": "workspace:*",
+    "@conject/artifacts": "workspace:*",
+    "@conject/config": "workspace:*",
+    "@conject/ranking": "workspace:*",
+    "@conject/tools": "workspace:*",
+    "@earendil-works/pi-coding-agent": "0.75.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

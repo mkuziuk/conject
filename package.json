@@ -1,0 +1,30 @@
+{
+  "name": "conject",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "typecheck": "tsc -b --pretty false",
+    "cli": "tsx apps/cli/src/index.ts"
+  },
+  "dependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^11.8.1",
+    "commander": "^12.1.0",
+    "kysely": "^0.27.6",
+    "yaml": "^2.6.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
