@@ -29,7 +29,7 @@ providers:
     searxng:
       enabled: false
 runtime:
-  default: mock
+  default: pi
   pi:
     useSdk: true
     agentDir: .conject/pi

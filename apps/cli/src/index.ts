@@ -12,13 +12,12 @@ import {
   type PaperSearchProvider,
   type WebSearchProvider
 } from "@conject/tools";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import {
+  assertPiOnlyRuntimeFlag,
   createConjectController,
   formatJob,
-  formatRun,
-  parseImplementRuntime,
-  parsePipelineRuntime
+  formatRun
 } from "./controller.js";
 import { runTui } from "./tui.js";
 import { createOAuthLoginCallbacks } from "./ui-oauth.js";
@@ -54,12 +53,14 @@ program
 
 program
   .command("run")
-  .description("Run Strategist, Researchers, and Reviewer for a run")
+  .description("Run Strategist, Researchers, and Reviewer through Pi")
   .argument("<run-id>")
-  .option("--real-research", "Use configured paper/web providers for Researcher jobs")
-  .option("--runtime <runtime>", "mock or pi; defaults to the run config runtime.default")
+  .addOption(new Option("--real-research", "deprecated; Conject runs through Pi only").hideHelp())
+  .addOption(new Option("--runtime <runtime>", "deprecated; Conject runs through Pi only").hideHelp())
   .action(async (runId: string, options: { realResearch?: boolean; runtime?: string }) => {
-    await createConjectController().runPipeline(runId, { realResearch: Boolean(options.realResearch), runtime: parsePipelineRuntime(options.runtime) });
+    if (options.realResearch) throw new Error("Conject runs through Pi only. Remove --real-research.");
+    assertPiOnlyRuntimeFlag(options.runtime);
+    await createConjectController().runPipeline(runId);
     console.log(`Run complete: ${runId}`);
   });
 
@@ -131,12 +132,13 @@ program
 
 program
   .command("implement")
-  .description("Generate an implementation pack for a hypothesis")
+  .description("Generate an implementation pack for a hypothesis through Pi")
   .argument("<run-id>")
   .argument("<hypothesis-id>")
-  .option("--runtime <runtime>", "scaffold, mock, or pi", "scaffold")
+  .addOption(new Option("--runtime <runtime>", "deprecated; Conject implements through Pi only").hideHelp())
   .action(async (runId: string, hypothesisId: string, options: { runtime?: string }) => {
-    console.log(await createConjectController().implement(runId, hypothesisId, parseImplementRuntime(options.runtime)));
+    assertPiOnlyRuntimeFlag(options.runtime);
+    console.log(await createConjectController().implement(runId, hypothesisId));
   });
 
 program

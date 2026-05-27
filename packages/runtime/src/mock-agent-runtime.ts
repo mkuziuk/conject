@@ -156,21 +156,45 @@ export class MockAgentRuntime implements AgentRuntime {
   private async runBuilder(input: RunAgentJobInput): Promise<RunAgentJobResult> {
     const hypothesis = input.inputArtifacts.find((artifact) => artifact.type === "hypothesis_card")?.json as HypothesisCard | undefined;
     if (!hypothesis) throw new Error("Builder requires one HypothesisCard artifact.");
+    const root = `implementations/${input.runId}/${hypothesis.id}`;
     return {
       outputArtifacts: [
         {
           type: "implementation_pack",
           json: {
             hypothesisId: hypothesis.id,
-            planMarkdownPath: `implementations/${input.runId}/${hypothesis.id}/PLAN.md`,
+            planMarkdownPath: `${root}/PLAN.md`,
             generatedFiles: [
-              `implementations/${input.runId}/${hypothesis.id}/README.md`,
-              `implementations/${input.runId}/${hypothesis.id}/pyproject.toml`,
-              `implementations/${input.runId}/${hypothesis.id}/src/experiment.py`,
-              `implementations/${input.runId}/${hypothesis.id}/tests/test_smoke.py`
+              `${root}/PLAN.md`,
+              `${root}/README.md`,
+              `${root}/pyproject.toml`,
+              `${root}/src/experiment.py`,
+              `${root}/tests/test_smoke.py`
             ],
             runCommands: ["uv sync", "uv run pytest"],
-            validationChecklist: ["Smoke test passes", "Baseline comparison is implemented", "Results are documented"]
+            validationChecklist: ["Smoke test passes", "Baseline comparison is implemented", "Results are documented"],
+            files: [
+              {
+                path: `${root}/PLAN.md`,
+                content: `# Implementation Plan\n\n## Minimal Experiment\n${hypothesis.minimalExperiment}\n\n## Falsification Test\n${hypothesis.falsificationTest}\n`
+              },
+              {
+                path: `${root}/README.md`,
+                content: `# ${hypothesis.title}\n\n${hypothesis.hypothesis}\n`
+              },
+              {
+                path: `${root}/pyproject.toml`,
+                content: `[project]\nname = "conject-${hypothesis.id.toLowerCase()}"\nversion = "0.1.0"\nrequires-python = ">=3.11"\ndependencies = []\n\n[dependency-groups]\ndev = ["pytest>=8"]\n`
+              },
+              {
+                path: `${root}/src/experiment.py`,
+                content: `def run_experiment() -> dict[str, float]:\n    return {"baseline": 0.0, "candidate": 0.0}\n`
+              },
+              {
+                path: `${root}/tests/test_smoke.py`,
+                content: `from src.experiment import run_experiment\n\n\ndef test_run_experiment_returns_metrics():\n    assert "baseline" in run_experiment()\n`
+              }
+            ]
           }
         }
       ],

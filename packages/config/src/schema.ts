@@ -73,7 +73,7 @@ export const ConjectConfigSchema = z.object({
     })
   }),
   runtime: z.object({
-    default: z.enum(["mock", "pi"]),
+    default: z.literal("pi"),
     pi: z.object({
       useSdk: z.boolean(),
       agentDir: z.string().optional()
@@ -121,7 +121,7 @@ export const defaultConfig: ConjectConfig = {
     }
   },
   runtime: {
-    default: "mock",
+    default: "pi",
     pi: {
       useSdk: true,
       agentDir: ".conject/pi"

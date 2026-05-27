@@ -14,6 +14,7 @@ describe("config", () => {
       const config = loadConfig(dir);
       expect(config.research.preset).toBe("quick");
       expect(config.research.ideas).toBe(3);
+      expect(config.runtime.default).toBe("pi");
       expect(config.models.default).toMatchObject({
         provider: "openai-codex",
         model: "gpt-5.5",

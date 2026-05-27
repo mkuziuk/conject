@@ -2,7 +2,7 @@
 
 ## Status
 
-Milestone 0-4 style CLI flow is implemented and verified with the mock pipeline. Pi runtime integration is project-owned and no longer depends on user-level Codex or Pi config. OpenAI Codex OAuth auth is configured through `models.*.auth` and defaults to Conject-owned global storage at `~/.conject/auth/auth.json`.
+The user-facing CLI/TUI flow is Pi-only. Pi runtime integration is project-owned and no longer depends on user-level Codex or Pi config. OpenAI Codex OAuth auth is configured through `models.*.auth` and defaults to Conject-owned global storage at `~/.conject/auth/auth.json`.
 
 ## Completed
 
@@ -19,11 +19,11 @@ Milestone 0-4 style CLI flow is implemented and verified with the mock pipeline.
 - Added `conject search "<query>" --type paper|web` for provider smoke tests.
 - Added mocked provider tests and verified live no-key OpenAlex search.
 - Verified live Tavily web search with `TAVILY_API_KEY` from the process environment.
-- Added `conject run <run-id> --real-research`, which keeps Strategist/Reviewer mock-backed but uses configured paper/web providers for Researcher evidence bundles.
+- Added internal tool-backed Researcher support for provider-backed evidence extraction.
 - Added tool-call persistence and status display for provider calls.
-- Verified a live `--real-research` run with OpenAlex and Tavily.
+- Verified a live provider-backed research run with OpenAlex and Tavily during the pre-Pi phase.
 - Added deterministic evidence extraction: source text normalization, source-linked claims, support/confidence heuristics, and source quality notes.
-- Verified a live `--real-research` run stores extracted claims and quality notes.
+- Verified provider-backed research stores extracted claims and quality notes.
 - Added structured agent profiles for Strategist, Researcher, Reviewer, and Builder.
 - Added a pinned `@earendil-works/pi-coding-agent` dependency.
 - Added a Conject-owned Pi SDK runtime adapter with strict JSON artifact parsing, zod validation, and one retry after validation failure.
@@ -35,26 +35,26 @@ Milestone 0-4 style CLI flow is implemented and verified with the mock pipeline.
 - Adjusted browser login so the paste-code prompt only appears with `--manual`; normal login waits for the browser callback and exits after storing credentials.
 - Rebranded user-facing auth to Conject auth, including status/login/logout messages and docs.
 - Added the first Ink TUI: plain `conject` opens a run dashboard and command cockpit.
+- Added TUI slash commands: `/login`, `/logout`, `/status`, `/new`, `/run`, `/export`, `/implement`, and `/help`.
+- Made Pi the only user-facing run and implementation path; mock/scaffold runtimes remain internal test fixtures only.
+- Documented the project storage hierarchy: `.conject/`, `exports/<run-id>/`, and `implementations/<run-id>/<hypothesis-id>/`.
 - Added `pnpm link:cli` for local development installs of the `conject` terminal command.
-- Added `conject run <run-id> --runtime mock|pi` for explicit pipeline runtime selection.
 - Extended implementation packs with optional `files[]` content, safe materialization under `implementations/`, and path traversal checks.
-- Added `conject implement <run-id> <hypothesis-id> --runtime mock|pi` so Builder can run through the runtime interface before pack materialization.
 - Added tests for Pi prompt/profile wiring and implementation pack materialization.
 
 ## Current
 
-- Mock/offline MVP path is working through ranked hypotheses, Markdown export, and implementation pack scaffolding.
-- Opt-in tool-backed Researcher path is working with provider calls and persisted tool-call logs.
+- User-facing runs and implementations use Pi. Mock/offline runtime remains available only through explicit test injection.
+- Provider-backed Researcher internals are available for future Pi tool integration and have persisted tool-call logs.
 - Evidence bundles now contain deterministic source-linked claims instead of raw abstract/snippet summaries only.
-- `pnpm cli pi-check` now validates `models.default.provider`, `models.default.model`, and `models.default.auth`; for OpenAI Codex it fails early until `pnpm cli auth login` creates Conject auth credentials.
-- Runtime-backed Builder packs can be materialized when the runtime produces an `implementation_pack`.
+- `pnpm cli pi-check` now validates `models.default.provider`, `models.default.model`, and `models.default.auth`; for OpenAI Codex it fails early until `conject auth login` or `/login` creates Conject auth credentials.
+- Runtime-backed Builder packs are materialized when Pi produces an `implementation_pack` with files.
 
 ## Remaining
 
-- Run a live Pi Strategist/Reviewer/Builder smoke after Conject global auth is verified.
+- Run a live Pi Strategist/Researcher/Reviewer/Builder smoke after Conject global auth is verified.
 - Add Pi-assisted Reviewer/Researcher reasoning on top of deterministic extracted evidence.
 - Expose paper/web provider adapters as Pi custom tools if we want Pi-driven search instead of deterministic tool-backed Researcher search.
-- Make scoped Pi Builder the default path once live Pi output quality is verified.
 - Expand the Ink TUI with richer artifact browsing and direct file opening.
 
 ## API Keys
@@ -64,4 +64,4 @@ Milestone 0-4 style CLI flow is implemented and verified with the mock pipeline.
 - Semantic Scholar: optional `SEMANTIC_SCHOLAR_API_KEY`.
 - Tavily: required for hosted web search via `TAVILY_API_KEY`.
 - SearXNG: no key, but requires `providers.web.searxng.baseUrl`.
-- Pi model provider: required only for `--runtime pi`; default config uses `models.default.auth.type: openai-codex` and requires `pnpm cli auth login`. API-key providers can use `models.default.auth.type: apiKeyEnv`.
+- Pi model provider: required for normal Conject runs and implementations; default config uses `models.default.auth.type: openai-codex` and requires `conject auth login` or `/login`. API-key providers can use `models.default.auth.type: apiKeyEnv`.

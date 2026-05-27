@@ -292,7 +292,7 @@ describe("PiAgentRuntime", () => {
         prompt: "Prompt",
         config: codexConfig()
       })
-    ).rejects.toThrow("Missing Conject auth credentials for openai-codex at .conject/pi/auth.json. Run: pnpm cli auth login");
+    ).rejects.toThrow("Missing Conject auth credentials for openai-codex at .conject/pi/auth.json. Run /login in the TUI or run: conject auth login");
     expect(sdk.sessionOptions).toBeUndefined();
   });
 
@@ -340,7 +340,7 @@ describe("PiAgentRuntime", () => {
     const result = await checkPiSdkAvailability(piConfig(), {});
     expect(result).toEqual({
       ok: false,
-      error: "Missing Pi API key environment variable: CONJECT_TEST_PI_KEY. Set it before using --runtime pi."
+      error: "Missing Pi API key environment variable: CONJECT_TEST_PI_KEY. Set it before running Conject."
     });
   });
 

@@ -27,7 +27,7 @@ The system is artifact-first, not chat-first. Agents communicate through durable
 - Schema validation: zod.
 - Tests: vitest.
 - Storage: SQLite with `better-sqlite3` and Kysely.
-- TUI: Ink command cockpit; `conject` opens the TUI, existing CLI subcommands remain.
+- TUI: Ink command cockpit; `conject` opens the TUI, slash commands are the primary interactive interface, existing CLI subcommands remain.
 - Python: execution/helper language only, managed with `uv` first and documented `venv`/`pip` fallback.
 - Runtime state: ignored `.conject/`.
 - Project config: committed root `conject.yaml`.
@@ -41,7 +41,7 @@ Use exactly four logical agents for MVP:
 - Strategist: normalizes the objective and creates candidate ideas.
 - Researcher: collects evidence for each idea.
 - Reviewer: converts ideas and evidence into ranked hypothesis cards.
-- Builder: creates an implementation plan and runnable scaffold for a selected hypothesis.
+- Builder: creates an implementation plan and runnable local pack for a selected hypothesis.
 
 Every agent has a structured profile:
 
@@ -75,10 +75,10 @@ interface AgentRuntime {
 
 Implement:
 
-- `MockAgentRuntime`: deterministic, default for tests/offline demos.
-- `PiAgentRuntime`: uses the pinned `@earendil-works/pi-coding-agent` SDK in-process, with Conject-owned auth/model/session config, explicit tool allowlists, custom tools, run-scoped sessions, event subscription, and structured output validation.
+- `PiAgentRuntime`: the only user-facing runtime. It uses the pinned `@earendil-works/pi-coding-agent` SDK in-process, with Conject-owned auth/model/session config, explicit tool allowlists, custom tools, run-scoped sessions, event subscription, and structured output validation.
+- `MockAgentRuntime`: deterministic internal fixture runtime for tests only.
 
-Milestone 3 must prove the full Strategist -> Researcher -> Reviewer pipeline through Pi. Builder becomes real later.
+The full Strategist -> Researcher -> Reviewer -> Builder flow runs through Pi in normal CLI/TUI use.
 
 ## Config
 
@@ -100,6 +100,8 @@ Secrets are never committed by default. Credentials come from environment variab
 Default Conject auth uses OpenAI Codex OAuth:
 
 ```yaml
+runtime:
+  default: pi
 models:
   default:
     provider: openai-codex
@@ -169,7 +171,20 @@ conject tui
 
 Commands use explicit run IDs for mutating and artifact-specific operations. Reruns resume by default and skip succeeded jobs unless forced.
 
-Plain `conject` opens the Ink TUI. The TUI is a keyboard-first dashboard for creating runs, executing mock/Pi pipelines, inspecting jobs/artifacts/rankings, exporting, generating implementation packs, and managing Conject auth. `conject pi ...` remains a compatibility alias for auth commands during the transition.
+Plain `conject` opens the Ink TUI. The TUI is a keyboard-first dashboard for creating runs, executing Pi pipelines, inspecting jobs/artifacts/rankings, exporting, generating implementation packs, and managing Conject auth. `conject pi ...` remains a compatibility alias for auth commands during the transition.
+
+The TUI supports slash commands:
+
+```text
+/login
+/status
+/new <prompt>
+/run
+/export
+/implement <hypothesis-id>
+```
+
+User-facing runs and implementations always use Pi. Deprecated `--runtime mock`, `--runtime scaffold`, and `--real-research` flags are rejected; `--runtime pi` is accepted only as a no-op compatibility flag.
 
 Local development install uses `pnpm link:cli` to expose the `conject` terminal command from `@conject/cli`; npm publishing is later.
 
@@ -186,6 +201,20 @@ Use a small SQLite schema:
 Most structured data may live in JSON columns for MVP. Store full local raw logs, Pi text, tool I/O, and parser errors under ignored `.conject/`.
 
 Use internal ULIDs for persistence and readable run-scoped domain IDs such as `IDEA-001` and `HYP-003` for CLI UX.
+
+Project hierarchy:
+
+```text
+project-root/
+  conject.yaml
+  .conject/
+    conject.sqlite
+    runs/<run-id>/
+    pi/
+    auth/auth.json
+  exports/<run-id>/
+  implementations/<run-id>/<hypothesis-id>/
+```
 
 ## Scoring
 
@@ -238,12 +267,12 @@ Builder generates:
 - Snapshot effective config per run.
 - Implement `new`, `list`, `status`, and `open`.
 
-### Milestone 3: Mock and Pi Research Pipeline
+### Milestone 3: Pi Research Pipeline
 
-- Implement orchestrator with `MockAgentRuntime`.
+- Implement orchestrator with `MockAgentRuntime` as an internal test fixture.
 - Implement `PiAgentRuntime` for Strategist, Researcher, and Reviewer.
 - Implement paper/web tool interfaces and logging.
-- Ensure full research-to-ranking pipeline works with mock and Pi.
+- Ensure full research-to-ranking pipeline works through Pi in product usage and through fixture runtimes in tests.
 
 ### Milestone 4: Ranking and Export
 
@@ -270,7 +299,7 @@ Test layers:
 
 - unit: schemas, config validation, IDs, scoring, permissions;
 - storage: migrations, run/artifact/job/event persistence;
-- orchestrator: mock pipeline, failed Researcher continuation, resume behavior, strict JSON retry;
+- orchestrator: fixture pipeline, failed Researcher continuation, resume behavior, strict JSON retry;
 - export: Markdown structure and files;
 - integration: Pi and live providers gated behind env vars.
 

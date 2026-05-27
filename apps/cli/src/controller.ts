@@ -3,9 +3,7 @@ import { hasConfig, loadConfig, writeDefaultConfig, type ConjectConfig } from "@
 import { Orchestrator } from "@conject/core";
 import { exportRunMarkdown, materializeImplementationPack } from "@conject/export";
 import {
-  MockAgentRuntime,
   PiAgentRuntime,
-  ToolBackedResearchRuntime,
   getPiAuthReadiness,
   loginPiModelAuth,
   logoutPiModelAuth,
@@ -15,8 +13,18 @@ import {
 } from "@conject/runtime";
 import { ConjectRepository, openDatabase } from "@conject/storage";
 
-export type PipelineRuntime = "mock" | "pi";
-export type ImplementRuntime = "scaffold" | PipelineRuntime;
+export type ConjectControllerRuntimeFactory = (input: {
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  repo: ConjectRepository;
+  runId: string;
+  config: ConjectConfig;
+}) => AgentRuntime | Promise<AgentRuntime>;
+
+export type ConjectControllerOptions = {
+  env?: NodeJS.ProcessEnv;
+  runtimeFactory?: ConjectControllerRuntimeFactory;
+};
 
 export type RunDetail = {
   run: Run;
@@ -40,10 +48,16 @@ export type ProjectSnapshot = {
 };
 
 export class ConjectController {
+  private readonly env: NodeJS.ProcessEnv;
+  private readonly runtimeFactory?: ConjectControllerRuntimeFactory;
+
   constructor(
     readonly cwd: string,
-    private readonly env: NodeJS.ProcessEnv = process.env
-  ) {}
+    options: ConjectControllerOptions = {}
+  ) {
+    this.env = options.env ?? process.env;
+    this.runtimeFactory = options.runtimeFactory;
+  }
 
   get hasConfig(): boolean {
     return hasConfig(this.cwd);
@@ -104,9 +118,10 @@ export class ConjectController {
     });
   }
 
-  async runPipeline(runId: string, options: { realResearch?: boolean; runtime?: PipelineRuntime } = {}): Promise<void> {
+  async runPipeline(runId: string): Promise<void> {
     await this.withRepo(async (repo) => {
-      const orchestrator = new Orchestrator(repo, await this.createRuntime(repo, runId, options));
+      await requireRun(repo, runId);
+      const orchestrator = new Orchestrator(repo, await this.createRuntime(repo, runId));
       await orchestrator.runFullPipeline(runId);
     });
   }
@@ -118,44 +133,23 @@ export class ConjectController {
     });
   }
 
-  async implement(runId: string, hypothesisId: string, runtime: ImplementRuntime = "scaffold"): Promise<string> {
+  async implement(runId: string, hypothesisId: string): Promise<string> {
     return this.withRepo(async (repo) => {
       await requireRun(repo, runId);
       const artifact = await repo.findArtifactByDomainId(runId, hypothesisId);
       if (!artifact || artifact.type !== "hypothesis_card") {
         throw new Error(`Hypothesis not found in ${runId}: ${hypothesisId}`);
       }
-      if (runtime !== "scaffold") {
-        const orchestrator = new Orchestrator(repo, await this.createRuntime(repo, runId, { runtime }));
-        const outputs = await orchestrator.runBuilder(runId, hypothesisId);
-        const packArtifact = outputs.find((output) => output.type === "implementation_pack");
-        if (!packArtifact) throw new Error(`Builder did not produce an implementation pack for ${hypothesisId}.`);
-        const pack = materializeImplementationPack(this.cwd, runId, artifact.json as HypothesisCard, packArtifact.json as ImplementationPack);
-        await repo.updateArtifactJson(runId, packArtifact.id, pack);
-        await repo.addEvent(runId, packArtifact.createdByJobId ?? null, "builder.pack_materialized", {
-          hypothesisId,
-          generatedFiles: pack.generatedFiles
-        });
-        return pack.planMarkdownPath;
-      }
-      const job = await repo.createJob(runId, "builder", [artifact.id]);
-      await repo.updateJob({ ...job, status: "running", startedAt: new Date().toISOString() });
-      const pack = materializeImplementationPack(this.cwd, runId, artifact.json as HypothesisCard);
-      const stored = await repo.storeArtifact({
-        runId,
-        type: "implementation_pack",
-        json: pack,
-        parentIds: [artifact.id],
-        createdByJobId: job.id
+      const orchestrator = new Orchestrator(repo, await this.createRuntime(repo, runId));
+      const outputs = await orchestrator.runBuilder(runId, hypothesisId);
+      const packArtifact = outputs.find((output) => output.type === "implementation_pack");
+      if (!packArtifact) throw new Error(`Builder did not produce an implementation pack for ${hypothesisId}.`);
+      const pack = materializeImplementationPack(this.cwd, runId, artifact.json as HypothesisCard, packArtifact.json as ImplementationPack);
+      await repo.updateArtifactJson(runId, packArtifact.id, pack);
+      await repo.addEvent(runId, packArtifact.createdByJobId ?? null, "builder.pack_materialized", {
+        hypothesisId,
+        generatedFiles: pack.generatedFiles
       });
-      await repo.updateJob({
-        ...job,
-        status: "succeeded",
-        outputArtifactIds: [stored.id],
-        startedAt: job.startedAt ?? new Date().toISOString(),
-        finishedAt: new Date().toISOString()
-      });
-      await repo.addEvent(runId, job.id, "builder.pack_materialized", { hypothesisId, generatedFiles: pack.generatedFiles });
       return pack.planMarkdownPath;
     });
   }
@@ -172,18 +166,13 @@ export class ConjectController {
     return logoutPiModelAuth(this.loadConfig(), this.env, { cwd: this.cwd });
   }
 
-  private async createRuntime(
-    repo: ConjectRepository,
-    runId: string,
-    options: { realResearch?: boolean; runtime?: PipelineRuntime } = {}
-  ): Promise<AgentRuntime> {
+  private async createRuntime(repo: ConjectRepository, runId: string): Promise<AgentRuntime> {
     const config = await repo.getRunConfig(runId);
-    const runtime = options.runtime ?? config.runtime.default;
-    if (runtime === "pi" && !config.runtime.pi.useSdk) {
-      throw new Error("runtime.pi.useSdk is false in conject.yaml; enable it before using --runtime pi.");
+    if (this.runtimeFactory) return this.runtimeFactory({ cwd: this.cwd, env: this.env, repo, runId, config });
+    if (!config.runtime.pi.useSdk) {
+      throw new Error("runtime.pi.useSdk is false in conject.yaml; enable it before running Conject.");
     }
-    const delegate = runtime === "pi" ? new PiAgentRuntime({ cwd: this.cwd, env: this.env }) : new MockAgentRuntime();
-    return options.realResearch ? new ToolBackedResearchRuntime({ delegate, env: this.env }) : delegate;
+    return new PiAgentRuntime({ cwd: this.cwd, env: this.env });
   }
 
   private async withRepo<T>(fn: (repo: ConjectRepository) => Promise<T>): Promise<T> {
@@ -196,20 +185,13 @@ export class ConjectController {
   }
 }
 
-export function createConjectController(cwd = process.cwd(), env: NodeJS.ProcessEnv = process.env): ConjectController {
-  return new ConjectController(cwd, env);
+export function createConjectController(cwd = process.cwd(), options: ConjectControllerOptions = {}): ConjectController {
+  return new ConjectController(cwd, options);
 }
 
-export function parsePipelineRuntime(value: string | undefined): PipelineRuntime | undefined {
-  if (value === undefined) return undefined;
-  if (value === "mock" || value === "pi") return value;
-  throw new Error("--runtime must be 'mock' or 'pi'.");
-}
-
-export function parseImplementRuntime(value: string | undefined): ImplementRuntime {
-  const runtime = value ?? "scaffold";
-  if (runtime === "scaffold" || runtime === "mock" || runtime === "pi") return runtime;
-  throw new Error("--runtime must be 'scaffold', 'mock', or 'pi'.");
+export function assertPiOnlyRuntimeFlag(value: string | undefined): void {
+  if (value === undefined || value === "pi") return;
+  throw new Error(`Conject runs through Pi only. Remove --runtime ${value}.`);
 }
 
 export function formatRun(run: Run): string {

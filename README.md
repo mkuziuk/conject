@@ -7,6 +7,7 @@ Start with:
 ```bash
 pnpm install
 pnpm cli init
+pnpm cli auth login
 pnpm cli
 pnpm cli new "Find implementable ideas for robust IMF in hyperspectral unmixing"
 pnpm cli run <run-id>
@@ -14,7 +15,18 @@ pnpm cli rank <run-id>
 pnpm cli export <run-id>
 ```
 
-`pnpm cli` opens the Conject TUI. All subcommands remain available for scripts.
+`pnpm cli` opens the Conject TUI. Inside the TUI, use slash commands:
+
+```text
+/login
+/status
+/new robust hyperspectral unmixing
+/run
+/export
+/implement HYP-001
+```
+
+All subcommands remain available for scripts.
 
 For local development, link the terminal command after building:
 
@@ -23,20 +35,7 @@ pnpm link:cli
 conject
 ```
 
-You can force a runtime for the research pipeline:
-
-```bash
-pnpm cli run <run-id> --runtime mock
-pnpm cli run <run-id> --runtime pi
-```
-
-The default run path uses a deterministic mock Researcher. To use configured paper/web providers for evidence collection:
-
-```bash
-TAVILY_API_KEY="..." pnpm cli run <run-id> --real-research
-```
-
-The LLM runtime is isolated behind the runtime interface and is not required for default tests. The Pi SDK is a pinned implementation detail, and Conject does not read your normal user-level Codex or Pi config. Check Conject auth and LLM readiness with:
+User-facing runs and implementations always go through Pi. The Pi SDK is a pinned implementation detail, and Conject does not read your normal user-level Codex or Pi config. Check Conject auth and LLM readiness with:
 
 ```bash
 pnpm cli auth status
@@ -47,6 +46,7 @@ The default model config uses OpenAI Codex OAuth through Conject-owned global au
 
 ```yaml
 runtime:
+  default: pi
   pi:
     agentDir: .conject/pi
 models:
@@ -73,6 +73,22 @@ pnpm cli auth login --manual
 
 Project-local auth is still supported with `auth.scope: project`, which defaults to `.conject/auth/auth.json`; explicit legacy paths such as `.conject/pi/auth.json` still work. The runtime passes Conject-owned auth storage to the SDK and does not use `~/.codex` or `~/.pi`.
 
+Where data is stored:
+
+```text
+project-root/
+  conject.yaml
+  .conject/
+    conject.sqlite
+    runs/<run-id>/
+    pi/
+    auth/auth.json
+  exports/<run-id>/
+  implementations/<run-id>/<hypothesis-id>/
+```
+
+`.conject/` is private runtime state. `exports/` and `implementations/` are visible project outputs.
+
 API-key providers are still supported:
 
 ```yaml
@@ -86,20 +102,11 @@ models:
       env: ANTHROPIC_API_KEY
 ```
 
-Builder defaults to deterministic scaffold materialization:
+Builder runs through Pi and materializes the returned implementation pack:
 
 ```bash
 pnpm cli implement <run-id> <hypothesis-id>
 ```
-
-The Builder can also go through the runtime interface:
-
-```bash
-pnpm cli implement <run-id> <hypothesis-id> --runtime mock
-pnpm cli implement <run-id> <hypothesis-id> --runtime pi
-```
-
-The tool-backed Researcher normalizes abstracts/snippets into source-linked claims, adds simple support/confidence labels, and records source quality notes. These heuristics are deterministic and intended as the pre-Pi baseline.
 
 Provider smoke tests:
 

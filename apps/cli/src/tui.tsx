@@ -3,9 +3,10 @@ import { Box, Text, render, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import type { Artifact, HypothesisCard, Job, Run } from "@conject/artifacts";
 import { createConjectController, type ConjectController, type ProjectSnapshot, type RunDetail } from "./controller.js";
+import { parseSlashCommand, type SlashCommand } from "./slash-commands.js";
 import { openBrowser } from "./ui-oauth.js";
 
-type Mode = "dashboard" | "new-run";
+type Mode = "dashboard" | "new-run" | "command";
 
 export async function runTui(cwd = process.cwd()): Promise<void> {
   const instance = render(<ConjectTui controller={createConjectController(cwd)} />);
@@ -19,6 +20,7 @@ export function ConjectTui({ controller }: { controller: ConjectController }): R
   const [detail, setDetail] = useState<RunDetail | undefined>();
   const [mode, setMode] = useState<Mode>("dashboard");
   const [prompt, setPrompt] = useState("");
+  const [commandInput, setCommandInput] = useState("/");
   const [message, setMessage] = useState("Loading project...");
   const [busy, setBusy] = useState<string | undefined>();
 
@@ -84,11 +86,77 @@ export function ConjectTui({ controller }: { controller: ConjectController }): R
     return card?.id;
   }, [detail]);
 
+  const login = useCallback(
+    async () => {
+      const next = await controller.authLogin({
+        onAuth: (info) => {
+          setMessage("Complete Conject auth in the browser.");
+          openBrowser(info.url);
+        },
+        onDeviceCode: (info) => setMessage(`Open ${info.verificationUri} and enter ${info.userCode}.`),
+        onPrompt: async () => {
+          throw new Error("Browser callback did not complete. Use: conject auth login --manual");
+        },
+        onProgress: setMessage,
+        onSelect: async () => undefined
+      });
+      return `Conject auth ready: ${next.ready ? "yes" : "no"}`;
+    },
+    [controller]
+  );
+
+  const executeSlashCommand = useCallback(
+    async (command: SlashCommand) => {
+      if (command.type === "help") {
+        setMessage("Commands: /login, /logout, /status, /new <prompt>, /run, /export, /implement <hypothesis-id>.");
+        return;
+      }
+      if (command.type === "status") {
+        setMessage(formatStatusMessage(snapshot, selectedRun, detail));
+        return;
+      }
+      if (command.type === "login") {
+        await runAction("Starting Conject auth login", login);
+        return;
+      }
+      if (command.type === "logout") {
+        await runAction("Logging out Conject auth", async () => {
+          const next = controller.authLogout();
+          return `Conject auth ready: ${next.ready ? "yes" : "no"}`;
+        });
+        return;
+      }
+      if (command.type === "new") {
+        if (!snapshot.hasConfig) throw new Error("Initialize first with i.");
+        await runAction("Creating run", async () => {
+          const run = await controller.createRun(command.prompt);
+          setSelectedIndex(0);
+          return `Created ${run.id}`;
+        });
+        return;
+      }
+      if (!selectedRun) throw new Error("No run selected.");
+      if (command.type === "run") {
+        await runAction(`Running ${selectedRun.id} with Pi`, () => controller.runPipeline(selectedRun.id));
+        return;
+      }
+      if (command.type === "export") {
+        await runAction(`Exporting ${selectedRun.id}`, () => controller.exportRun(selectedRun.id));
+        return;
+      }
+      if (command.type === "implement") {
+        await runAction(`Building ${command.hypothesisId}`, () => controller.implement(selectedRun.id, command.hypothesisId));
+      }
+    },
+    [controller, detail, login, runAction, selectedRun, snapshot]
+  );
+
   useInput((input, key) => {
-    if (mode === "new-run") {
+    if (mode === "new-run" || mode === "command") {
       if (key.escape) {
         setMode("dashboard");
         setPrompt("");
+        setCommandInput("/");
       }
       return;
     }
@@ -109,42 +177,25 @@ export function ConjectTui({ controller }: { controller: ConjectController }): R
     } else if (input === "n") {
       if (!snapshot.hasConfig) setMessage("Initialize first with i.");
       else setMode("new-run");
+    } else if (input === "/") {
+      setCommandInput("/");
+      setMode("command");
     } else if (input === "r" && selectedRun) {
-      void runAction(`Running ${selectedRun.id}`, () => controller.runPipeline(selectedRun.id));
-    } else if (input === "m" && selectedRun) {
-      void runAction(`Running ${selectedRun.id} with mock`, () => controller.runPipeline(selectedRun.id, { runtime: "mock" }));
-    } else if (input === "p" && selectedRun) {
-      void runAction(`Running ${selectedRun.id} with LLM runtime`, () => controller.runPipeline(selectedRun.id, { runtime: "pi" }));
-    } else if (input === "f" && selectedRun) {
-      void runAction(`Running ${selectedRun.id} with real research`, () => controller.runPipeline(selectedRun.id, { realResearch: true }));
+      void runAction(`Running ${selectedRun.id} with Pi`, () => controller.runPipeline(selectedRun.id));
     } else if (input === "x" && selectedRun) {
       void runAction(`Exporting ${selectedRun.id}`, () => controller.exportRun(selectedRun.id));
     } else if (input === "b" && selectedRun) {
       if (!topHypothesisId) setMessage("No hypothesis available. Run the pipeline first.");
-      else void runAction(`Building ${topHypothesisId}`, () => controller.implement(selectedRun.id, topHypothesisId, "scaffold"));
+      else void runAction(`Building ${topHypothesisId}`, () => controller.implement(selectedRun.id, topHypothesisId));
     } else if (input === "l") {
-      void runAction("Starting Conject auth login", async () => {
-        const next = await controller.authLogin({
-          onAuth: (info) => {
-            setMessage("Complete Conject auth in the browser.");
-            openBrowser(info.url);
-          },
-          onDeviceCode: (info) => setMessage(`Open ${info.verificationUri} and enter ${info.userCode}.`),
-          onPrompt: async () => {
-            throw new Error("Browser callback did not complete. Use: conject auth login --manual");
-          },
-          onProgress: setMessage,
-          onSelect: async () => undefined
-        });
-        return `Conject auth ready: ${next.ready ? "yes" : "no"}`;
-      });
+      void runAction("Starting Conject auth login", login);
     } else if (input === "o") {
       void runAction("Logging out Conject auth", async () => {
         const next = controller.authLogout();
         return `Conject auth ready: ${next.ready ? "yes" : "no"}`;
       });
     } else if (input === "?") {
-      setMessage("Keys: n new, r run, m mock, p LLM, f real research, x export, b build, l login, o logout, q quit.");
+      setMessage("Keys: / command, n new, r run Pi, x export, b build, l login, o logout, q quit.");
     }
   });
 
@@ -158,6 +209,18 @@ export function ConjectTui({ controller }: { controller: ConjectController }): R
       setSelectedIndex(0);
       return `Created ${run.id}`;
     });
+  };
+
+  const submitCommand = async (value: string): Promise<void> => {
+    setMode("dashboard");
+    setCommandInput("/");
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === "/") return;
+    try {
+      await executeSlashCommand(parseSlashCommand(trimmed));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
   };
 
   return (
@@ -176,6 +239,11 @@ export function ConjectTui({ controller }: { controller: ConjectController }): R
         <Box marginTop={1}>
           <Text color="cyan">New run prompt: </Text>
           <TextInput value={prompt} onChange={setPrompt} onSubmit={(value) => void submitPrompt(value)} />
+        </Box>
+      ) : mode === "command" ? (
+        <Box marginTop={1}>
+          <Text color="cyan">Command: </Text>
+          <TextInput value={commandInput} onChange={setCommandInput} onSubmit={(value) => void submitCommand(value)} />
         </Box>
       ) : (
         <Footer message={message} />
@@ -277,7 +345,7 @@ function EventsSummary({ detail }: { detail?: RunDetail }): React.ReactElement {
 function Footer({ message }: { message: string }): React.ReactElement {
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text color="gray">n new | r run | m mock | p LLM | f real research | x export | b build | l login | o logout | ? help | q quit</Text>
+      <Text color="gray">/ command | n new | r run Pi | x export | b build | l login | o logout | ? help | q quit</Text>
       <Text>{message}</Text>
     </Box>
   );
@@ -296,6 +364,17 @@ function formatJobCounts(jobs: Job[]): string {
   return Object.entries(counts)
     .map(([status, count]) => `${status}:${count}`)
     .join(" ");
+}
+
+function formatStatusMessage(snapshot: ProjectSnapshot, selectedRun?: Run, detail?: RunDetail): string {
+  const auth = snapshot.auth ? (snapshot.auth.ready ? "auth ready" : "auth missing") : "auth unavailable";
+  const project = snapshot.hasConfig ? "config ready" : "config missing";
+  if (!selectedRun) return `${project}; ${auth}; no run selected.`;
+  return `${project}; ${auth}; selected ${selectedRun.id} ${selectedRun.status}; jobs ${formatJobCounts(detail?.jobs ?? [])}; artifacts ${
+    Object.entries(countArtifacts(detail?.artifacts ?? []))
+      .map(([type, count]) => `${type}:${count}`)
+      .join(" ") || "none"
+  }.`;
 }
 
 function clamp(value: number, min: number, max: number): number {

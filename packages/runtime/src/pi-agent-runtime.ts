@@ -350,7 +350,7 @@ export function resolvePiModelConfig(
   if (!modelConfig.auth && !modelConfig.apiKeyEnv) missing.push("auth");
   if (missing.length > 0) {
     throw new Error(
-      `Missing Pi model config field(s): models.default.${missing.join(", models.default.")}. Set provider, model, and auth in conject.yaml before using --runtime pi.`
+      `Missing Pi model config field(s): models.default.${missing.join(", models.default.")}. Set provider, model, and auth in conject.yaml before running Conject.`
     );
   }
 
@@ -364,7 +364,7 @@ export function resolvePiModelConfig(
   if (authConfig.type === "apiKeyEnv") {
     const apiKey = env[authConfig.env];
     if (!apiKey) {
-      throw new Error(`Missing Pi API key environment variable: ${authConfig.env}. Set it before using --runtime pi.`);
+      throw new Error(`Missing Pi API key environment variable: ${authConfig.env}. Set it before running Conject.`);
     }
     return {
       provider,
@@ -428,7 +428,7 @@ function hasStoredProviderAuth(authStorage: PiAuthStorage, provider: string): bo
 
 function missingOAuthMessage(resolvedModel: ResolvedPiModelConfig): string {
   const storagePath = resolvedModel.auth.type === "openai-codex" ? resolvedModel.auth.storagePath : DEFAULT_CONJECT_PROJECT_AUTH_PATH;
-  return `Missing Conject auth credentials for ${resolvedModel.provider} at ${storagePath}. Run: pnpm cli auth login`;
+  return `Missing Conject auth credentials for ${resolvedModel.provider} at ${storagePath}. Run /login in the TUI or run: conject auth login`;
 }
 
 function resolveConjectStatePath(cwd: string, configuredPath: string, fieldName: string, outsideMessage: string): string {

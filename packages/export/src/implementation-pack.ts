@@ -41,9 +41,9 @@ export function materializeImplementationPack(
   cwd: string,
   runId: string,
   card: HypothesisCard,
-  pack: ImplementationPack = createScaffoldImplementationPack(runId, card)
+  pack?: ImplementationPack
 ): ImplementationPack {
-  const materializable = pack.files?.length ? pack : createScaffoldImplementationPack(runId, card);
+  const materializable = pack ?? createScaffoldImplementationPack(runId, card);
   materializeImplementationPackFiles(cwd, materializable);
   return materializable;
 }
