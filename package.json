@@ -12,7 +12,7 @@
     "test": "vitest run",
     "typecheck": "tsc -b --pretty false",
     "cli": "tsx apps/cli/src/index.ts",
-    "link:cli": "pnpm --filter @conject/cli build && pnpm --filter @conject/cli link --global"
+    "link:cli": "pnpm --filter @conject/cli build && mkdir -p \"$HOME/.local/bin\" && PNPM_HOME=\"$HOME/.local/bin\" pnpm -C apps/cli link --global"
   },
   "dependencies": {
     "@types/better-sqlite3": "^7.6.13",
