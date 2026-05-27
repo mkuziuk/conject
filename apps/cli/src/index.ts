@@ -265,7 +265,8 @@ const piCommand = program.command("pi").description("Manage Conject-owned Pi aut
 piCommand
   .command("login")
   .description("Log in using the auth method configured in models.default.auth")
-  .action(async () => {
+  .option("--manual", "Prompt for a pasted authorization code or redirect URL instead of waiting only for the browser callback")
+  .action(async (options: { manual?: boolean }) => {
     const config = loadConfig(process.cwd());
     const readiness = getPiAuthReadiness(config);
     if (readiness.authType === "apiKeyEnv") {
@@ -273,7 +274,7 @@ piCommand
       return;
     }
 
-    const callbacks = createOAuthLoginCallbacks();
+    const callbacks = createOAuthLoginCallbacks({ manual: Boolean(options.manual) });
     try {
       const next = await loginPiModelAuth(config, callbacks);
       console.log(`Stored ${next.provider} credentials at ${next.storagePath}.`);
@@ -322,15 +323,18 @@ program.parseAsync(process.argv).catch((error: unknown) => {
   process.exitCode = 1;
 });
 
-function createOAuthLoginCallbacks(): PiOAuthLoginCallbacks & { close: () => void } {
-  if (!process.stdin.isTTY) throw new Error("Pi OAuth login requires an interactive terminal.");
+function createOAuthLoginCallbacks(options: { manual: boolean }): PiOAuthLoginCallbacks & { close: () => void } {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const ask = async (message: string): Promise<string> => rl.question(`${message} `);
+  const ask = async (message: string): Promise<string> => {
+    if (!process.stdin.isTTY) throw new Error("Pi OAuth manual code entry requires an interactive terminal.");
+    return rl.question(`${message} `);
+  };
 
-  return {
+  const callbacks: PiOAuthLoginCallbacks & { close: () => void } = {
     onAuth: (info) => {
       console.log(info.instructions ?? "Complete OAuth login in your browser.");
       console.log(info.url);
+      if (!options.manual) console.log("Waiting for browser callback. If it does not complete, rerun with: pnpm cli pi login --manual");
       openBrowser(info.url);
     },
     onDeviceCode: (info) => {
@@ -338,7 +342,6 @@ function createOAuthLoginCallbacks(): PiOAuthLoginCallbacks & { close: () => voi
     },
     onPrompt: (prompt) => ask(prompt.message),
     onProgress: (message) => console.log(message),
-    onManualCodeInput: () => ask("Paste the authorization code or full redirect URL, or complete login in the browser:"),
     onSelect: async (prompt) => {
       console.log(prompt.message);
       for (const option of prompt.options) console.log(`${option.id}: ${option.label}`);
@@ -347,6 +350,12 @@ function createOAuthLoginCallbacks(): PiOAuthLoginCallbacks & { close: () => voi
     },
     close: () => rl.close()
   };
+
+  if (options.manual) {
+    callbacks.onManualCodeInput = () => ask("Paste the authorization code or full redirect URL, or complete login in the browser:");
+  }
+
+  return callbacks;
 }
 
 function openBrowser(url: string): void {

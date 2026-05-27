@@ -55,6 +55,12 @@ Run this once to create `.conject/pi/auth.json`:
 pnpm cli pi login
 ```
 
+If the browser callback cannot complete, use the explicit paste-code fallback:
+
+```bash
+pnpm cli pi login --manual
+```
+
 `runtime.pi.agentDir` and `models.default.auth.storagePath` must stay under `.conject/`; the runtime passes that project-local auth store to Pi and does not use `~/.codex` or `~/.pi`.
 
 API-key providers are still supported:

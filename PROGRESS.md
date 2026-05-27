@@ -32,6 +32,7 @@ Milestone 0-4 style CLI flow is implemented and verified with the mock pipeline.
 - Added `conject pi-check` to validate project Pi runtime readiness.
 - Added the `models.*.auth` shape for config-owned Pi credentials, with OpenAI Codex OAuth stored under `.conject/pi/auth.json` and legacy `apiKeyEnv` compatibility.
 - Added `conject pi login`, `conject pi logout`, and `conject pi status` commands for project-local Pi auth.
+- Adjusted `conject pi login` so the paste-code prompt only appears with `--manual`; normal login waits for the browser callback.
 - Added `conject run <run-id> --runtime mock|pi` for explicit pipeline runtime selection.
 - Extended implementation packs with optional `files[]` content, safe materialization under `implementations/`, and path traversal checks.
 - Added `conject implement <run-id> <hypothesis-id> --runtime mock|pi` so Builder can run through the runtime interface before pack materialization.
