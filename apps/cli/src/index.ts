@@ -275,11 +275,17 @@ piCommand
     }
 
     const callbacks = createOAuthLoginCallbacks({ manual: Boolean(options.manual) });
+    let loginSucceeded = false;
     try {
       const next = await loginPiModelAuth(config, callbacks);
       console.log(`Stored ${next.provider} credentials at ${next.storagePath}.`);
+      loginSucceeded = true;
     } finally {
       callbacks.close();
+    }
+    if (loginSucceeded) {
+      // Pi's OAuth callback server can leave a browser socket alive after credentials are stored.
+      process.exit(0);
     }
   });
 
