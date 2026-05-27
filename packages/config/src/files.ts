@@ -34,8 +34,8 @@ export function renderConfig(config: ConjectConfig = defaultConfig): string {
   const doc = new YAML.Document(serializable);
   return [
     "# Conject project configuration.",
-    "# Commit this file. Keep credentials in environment variables referenced below.",
-    "# Pi runtime state is Conject-owned and must stay under .conject/.",
+    "# Commit this file. Keep credentials in environment variables or ignored .conject/ auth files.",
+    "# Pi runtime state and OAuth credential storage are Conject-owned and must stay under .conject/.",
     "# Use research.preset as the plain-language starting point, then edit numeric limits as needed.",
     doc.toString({ lineWidth: 100 })
   ].join("\n");

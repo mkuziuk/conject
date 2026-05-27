@@ -143,6 +143,50 @@ describe("PiAgentRuntime", () => {
     expect(sdk.sessionOptions).toBeUndefined();
   });
 
+  it("preserves legacy apiKeyEnv Pi model config", async () => {
+    const session = new FakePiSession([
+      JSON.stringify({
+        outputArtifacts: [
+          {
+            type: "idea",
+            json: {
+              id: "IDEA-001",
+              title: "Idea",
+              summary: "Summary",
+              rationale: "Rationale",
+              expectedValue: "Value",
+              possibleRisks: [],
+              searchQueries: ["query"]
+            }
+          }
+        ]
+      })
+    ]);
+    const sdk = new FakePiSdk(session);
+    const runtime = new PiAgentRuntime({
+      sdk,
+      env: { CONJECT_TEST_PI_KEY: "legacy-secret" }
+    });
+    const config = piConfig();
+    config.models.default = {
+      provider: "anthropic",
+      model: "claude-test",
+      apiKeyEnv: "CONJECT_TEST_PI_KEY",
+      thinking: "medium"
+    };
+
+    await runtime.runAgentJob({
+      runId: "run-1",
+      jobId: "job-1",
+      agentId: "strategist",
+      inputArtifacts: [],
+      prompt: "Prompt",
+      config
+    });
+
+    expect(sdk.authStorage.runtimeKeys).toEqual([{ provider: "anthropic", apiKey: "legacy-secret" }]);
+  });
+
   it("fails before session creation when the configured API key env var is missing", async () => {
     const session = new FakePiSession([]);
     const sdk = new FakePiSdk(session);
@@ -158,6 +202,82 @@ describe("PiAgentRuntime", () => {
         config: piConfig()
       })
     ).rejects.toThrow("Missing Pi API key environment variable: CONJECT_TEST_PI_KEY");
+    expect(sdk.sessionOptions).toBeUndefined();
+  });
+
+  it("uses project-local OpenAI Codex OAuth storage when configured", async () => {
+    const session = new FakePiSession([
+      JSON.stringify({
+        outputArtifacts: [
+          {
+            type: "idea",
+            json: {
+              id: "IDEA-001",
+              title: "Idea",
+              summary: "Summary",
+              rationale: "Rationale",
+              expectedValue: "Value",
+              possibleRisks: [],
+              searchQueries: ["query"]
+            }
+          }
+        ]
+      })
+    ]);
+    const sdk = new FakePiSdk(session);
+    sdk.fileAuthStorage.storedProviders.add("openai-codex");
+    const runtime = new PiAgentRuntime({ sdk, cwd: "/tmp/conject-test", env: {} });
+
+    await runtime.runAgentJob({
+      runId: "run-1",
+      jobId: "job-1",
+      agentId: "strategist",
+      inputArtifacts: [],
+      prompt: "Prompt",
+      config: codexConfig()
+    });
+
+    expect(sdk.createdAuthPath).toBe("/tmp/conject-test/.conject/pi/auth.json");
+    expect(sdk.fileAuthStorage.runtimeKeys).toEqual([]);
+    expect(sdk.modelRegistry.findCalls).toEqual([{ provider: "openai-codex", modelId: "gpt-5.5" }]);
+    expect(sdk.sessionOptions?.authStorage).toBe(sdk.fileAuthStorage);
+  });
+
+  it("fails before session creation when OpenAI Codex OAuth credentials are missing", async () => {
+    const session = new FakePiSession([]);
+    const sdk = new FakePiSdk(session);
+    const runtime = new PiAgentRuntime({ sdk, cwd: "/tmp/conject-test", env: {} });
+
+    await expect(
+      runtime.runAgentJob({
+        runId: "run-1",
+        jobId: "job-1",
+        agentId: "strategist",
+        inputArtifacts: [],
+        prompt: "Prompt",
+        config: codexConfig()
+      })
+    ).rejects.toThrow("Missing Pi OAuth credentials for openai-codex at .conject/pi/auth.json. Run: pnpm cli pi login");
+    expect(sdk.sessionOptions).toBeUndefined();
+  });
+
+  it("rejects OpenAI Codex auth paths outside .conject", async () => {
+    const session = new FakePiSession([]);
+    const sdk = new FakePiSdk(session);
+    const runtime = new PiAgentRuntime({ sdk, cwd: "/tmp/conject-test", env: {} });
+    const config = codexConfig();
+    config.models.default.auth = { type: "openai-codex", storagePath: "../auth.json" };
+
+    await expect(
+      runtime.runAgentJob({
+        runId: "run-1",
+        jobId: "job-1",
+        agentId: "strategist",
+        inputArtifacts: [],
+        prompt: "Prompt",
+        config
+      })
+    ).rejects.toThrow("models.default.auth.storagePath must stay under .conject");
     expect(sdk.sessionOptions).toBeUndefined();
   });
 
@@ -188,6 +308,14 @@ describe("PiAgentRuntime", () => {
       error: "Missing Pi API key environment variable: CONJECT_TEST_PI_KEY. Set it before using --runtime pi."
     });
   });
+
+  it("reports OpenAI Codex readiness from project-local auth storage", async () => {
+    const sdk = new FakePiSdk(new FakePiSession([]));
+    sdk.fileAuthStorage.storedProviders.add("openai-codex");
+    const result = await checkPiSdkAvailability(codexConfig(), {}, { cwd: "/tmp/conject-test", sdk });
+    expect(result).toEqual({ ok: true });
+    expect(sdk.createdAuthPath).toBe("/tmp/conject-test/.conject/pi/auth.json");
+  });
 });
 
 function piConfig(): ConjectConfig {
@@ -195,8 +323,19 @@ function piConfig(): ConjectConfig {
   config.models.default = {
     provider: "anthropic",
     model: "claude-test",
-    apiKeyEnv: "CONJECT_TEST_PI_KEY",
+    auth: { type: "apiKeyEnv", env: "CONJECT_TEST_PI_KEY" },
     thinking: "medium"
+  };
+  return config;
+}
+
+function codexConfig(): ConjectConfig {
+  const config = structuredClone(defaultConfig);
+  config.models.default = {
+    provider: "openai-codex",
+    model: "gpt-5.5",
+    auth: { type: "openai-codex", storagePath: ".conject/pi/auth.json" },
+    thinking: "xhigh"
   };
   return config;
 }
@@ -222,9 +361,18 @@ class FakePiSession {
 
 class FakeAuthStorage {
   readonly runtimeKeys: Array<{ provider: string; apiKey: string }> = [];
+  readonly storedProviders = new Set<string>();
 
   setRuntimeApiKey(provider: string, apiKey: string): void {
     this.runtimeKeys.push({ provider, apiKey });
+  }
+
+  has(provider: string): boolean {
+    return this.storedProviders.has(provider);
+  }
+
+  getAuthStatus(provider: string): { configured: boolean; source?: string } {
+    return this.has(provider) ? { configured: true, source: "stored" } : { configured: false };
   }
 }
 
@@ -252,14 +400,20 @@ class FakeResourceLoader {
 class FakePiSdk {
   readonly model = { provider: "anthropic", id: "claude-test" };
   readonly authStorage = new FakeAuthStorage();
+  readonly fileAuthStorage = new FakeAuthStorage();
   readonly modelRegistry = new FakeModelRegistry(this.model);
   readonly settingsManager = { type: "settings" };
   readonly sessionManager = { type: "session" };
   readonly DefaultResourceLoader: new (options: Record<string, unknown>) => FakeResourceLoader;
   resourceLoader?: FakeResourceLoader;
   sessionOptions?: Record<string, unknown>;
+  createdAuthPath?: string;
 
   readonly AuthStorage = {
+    create: (authPath?: string) => {
+      this.createdAuthPath = authPath;
+      return this.fileAuthStorage;
+    },
     inMemory: () => this.authStorage
   };
 

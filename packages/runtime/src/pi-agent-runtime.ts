@@ -30,8 +30,24 @@ type PiSession = {
   messages?: unknown[];
 };
 
-type PiAuthStorage = {
+export type PiAuthStorage = {
   setRuntimeApiKey: (provider: string, apiKey: string) => void;
+  has?: (provider: string) => boolean;
+  hasAuth?: (provider: string) => boolean;
+  getAuthStatus?: (provider: string) => { configured: boolean; source?: string; label?: string };
+  login?: (providerId: string, callbacks: PiOAuthLoginCallbacks) => Promise<void>;
+  logout?: (provider: string) => void;
+  drainErrors?: () => Error[];
+};
+
+export type PiOAuthLoginCallbacks = {
+  onAuth: (info: { url: string; instructions?: string }) => void;
+  onDeviceCode: (info: { userCode: string; verificationUri: string; intervalSeconds?: number; expiresInSeconds?: number }) => void;
+  onPrompt: (prompt: { message: string; placeholder?: string; allowEmpty?: boolean }) => Promise<string>;
+  onProgress?: (message: string) => void;
+  onManualCodeInput?: () => Promise<string>;
+  onSelect: (prompt: { message: string; options: Array<{ id: string; label: string }> }) => Promise<string | undefined>;
+  signal?: AbortSignal;
 };
 
 type PiModelRegistry = {
@@ -43,9 +59,10 @@ type PiResourceLoader = {
   reload: () => Promise<void>;
 };
 
-type PiSdk = {
+export type PiSdk = {
   createAgentSession: (options?: Record<string, unknown>) => Promise<{ session: PiSession }>;
   AuthStorage: {
+    create: (authPath?: string) => PiAuthStorage;
     inMemory: () => PiAuthStorage;
   };
   ModelRegistry: {
@@ -60,12 +77,34 @@ type PiSdk = {
   DefaultResourceLoader: new (options: Record<string, unknown>) => PiResourceLoader;
 };
 
-type ResolvedPiModelConfig = {
+export type ResolvedPiModelConfig = {
   provider: string;
   model: string;
-  apiKeyEnv: string;
-  apiKey: string;
+  auth: ResolvedPiModelAuth;
   thinking?: string;
+};
+
+export type ResolvedPiModelAuth =
+  | {
+      type: "apiKeyEnv";
+      env: string;
+      apiKey: string;
+    }
+  | {
+      type: "openai-codex";
+      storagePath: string;
+      authPath: string;
+    };
+
+export type PiAuthReadiness = {
+  provider: string;
+  model: string;
+  authType: ResolvedPiModelAuth["type"];
+  ready: boolean;
+  storagePath?: string;
+  source?: string;
+  label?: string;
+  error?: string;
 };
 
 export type PiAgentRuntimeOptions = {
@@ -77,6 +116,7 @@ export type PiAgentRuntimeOptions = {
 };
 
 const DEFAULT_CONJECT_PI_AGENT_DIR = ".conject/pi";
+const DEFAULT_CONJECT_PI_AUTH_PATH = ".conject/pi/auth.json";
 const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
 
 const installedPiSdk: PiSdk = {
@@ -106,9 +146,9 @@ export class PiAgentRuntime implements AgentRuntime {
   async runAgentJob(input: RunAgentJobInput): Promise<RunAgentJobResult> {
     const cwd = resolve(this.cwd ?? process.cwd());
     const agentDir = resolveConjectPiAgentDir(cwd, this.agentDir ?? input.config.runtime.pi.agentDir);
-    const resolvedModel = resolvePiModelConfig(input.config, input.agentId, this.env);
-    const authStorage = this.sdk.AuthStorage.inMemory();
-    authStorage.setRuntimeApiKey(resolvedModel.provider, resolvedModel.apiKey);
+    const resolvedModel = resolvePiModelConfig(input.config, input.agentId, this.env, { cwd });
+    const authStorage = createPiAuthStorage(resolvedModel, this.sdk);
+    ensurePiAuthReady(resolvedModel, authStorage);
     const modelRegistry = this.sdk.ModelRegistry.inMemory(authStorage);
     const model = modelRegistry.find(resolvedModel.provider, resolvedModel.model);
     if (!model) {
@@ -188,12 +228,31 @@ export class PiAgentRuntime implements AgentRuntime {
 
 export async function checkPiSdkAvailability(
   config?: ConjectConfig,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  options: { cwd?: string; sdk?: PiSdk } = {}
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     if (config) {
-      resolveConjectPiAgentDir(process.cwd(), config.runtime.pi.agentDir);
-      resolvePiModelConfig(config, "strategist", env);
+      const cwd = resolve(options.cwd ?? process.cwd());
+      const sdk = options.sdk ?? installedPiSdk;
+      resolveConjectPiAgentDir(cwd, config.runtime.pi.agentDir);
+      const resolvedModel = resolvePiModelConfig(config, "strategist", env, { cwd });
+      const authStorage = createPiAuthStorage(resolvedModel, sdk);
+      ensurePiAuthReady(resolvedModel, authStorage);
+      const modelRegistry = sdk.ModelRegistry.inMemory(authStorage);
+      const model = modelRegistry.find(resolvedModel.provider, resolvedModel.model);
+      if (!model) {
+        const loadError = modelRegistry.getError?.();
+        throw new Error(
+          [
+            `Configured Pi model not found: ${resolvedModel.provider}/${resolvedModel.model}.`,
+            "Use a model supported by the pinned @earendil-works/pi-coding-agent SDK or add custom model registry support first.",
+            loadError ? `Model registry error: ${loadError}` : ""
+          ]
+            .filter(Boolean)
+            .join(" ")
+        );
+      }
     }
     return { ok: true };
   } catch (error) {
@@ -201,47 +260,181 @@ export async function checkPiSdkAvailability(
   }
 }
 
-function resolveConjectPiAgentDir(cwd: string, configuredAgentDir?: string): string {
-  const value = configuredAgentDir?.trim() || DEFAULT_CONJECT_PI_AGENT_DIR;
-  if (isAbsolute(value)) {
-    throw new Error("runtime.pi.agentDir must be a relative path under .conject/.");
+export function getPiAuthReadiness(
+  config: ConjectConfig,
+  env: NodeJS.ProcessEnv = process.env,
+  options: { cwd?: string; sdk?: PiSdk; agentId?: RunAgentJobInput["agentId"] } = {}
+): PiAuthReadiness {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const sdk = options.sdk ?? installedPiSdk;
+  const resolvedModel = resolvePiModelConfig(config, options.agentId ?? "strategist", env, { cwd });
+  const authStorage = createPiAuthStorage(resolvedModel, sdk);
+
+  if (resolvedModel.auth.type === "apiKeyEnv") {
+    return {
+      provider: resolvedModel.provider,
+      model: resolvedModel.model,
+      authType: "apiKeyEnv",
+      ready: true,
+      source: "environment",
+      label: resolvedModel.auth.env
+    };
   }
-  const resolved = resolve(cwd, value);
-  const stateRoot = resolve(cwd, ".conject");
-  const withinState = resolved === stateRoot || (!relative(stateRoot, resolved).startsWith("..") && !isAbsolute(relative(stateRoot, resolved)));
-  if (!withinState) {
-    throw new Error("runtime.pi.agentDir must stay under .conject/ so Conject never reads user-level Pi configuration.");
-  }
-  return resolved;
+
+  const status = authStorage.getAuthStatus?.(resolvedModel.provider);
+  const ready = hasStoredProviderAuth(authStorage, resolvedModel.provider);
+  return {
+    provider: resolvedModel.provider,
+    model: resolvedModel.model,
+    authType: "openai-codex",
+    ready,
+    storagePath: resolvedModel.auth.storagePath,
+    source: status?.source,
+    label: status?.label,
+    error: ready ? undefined : missingOAuthMessage(resolvedModel)
+  };
 }
 
-function resolvePiModelConfig(config: ConjectConfig, agentId: RunAgentJobInput["agentId"], env: NodeJS.ProcessEnv): ResolvedPiModelConfig {
+export async function loginPiModelAuth(
+  config: ConjectConfig,
+  callbacks: PiOAuthLoginCallbacks,
+  env: NodeJS.ProcessEnv = process.env,
+  options: { cwd?: string; sdk?: PiSdk; agentId?: RunAgentJobInput["agentId"] } = {}
+): Promise<PiAuthReadiness> {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const sdk = options.sdk ?? installedPiSdk;
+  const resolvedModel = resolvePiModelConfig(config, options.agentId ?? "strategist", env, { cwd });
+  if (resolvedModel.auth.type !== "openai-codex") {
+    return getPiAuthReadiness(config, env, { cwd, sdk, agentId: options.agentId });
+  }
+  const authStorage = createPiAuthStorage(resolvedModel, sdk);
+  if (!authStorage.login) throw new Error("Pinned Pi SDK AuthStorage does not support OAuth login.");
+  await authStorage.login(resolvedModel.provider, callbacks);
+  return getPiAuthReadiness(config, env, { cwd, sdk, agentId: options.agentId });
+}
+
+export function logoutPiModelAuth(
+  config: ConjectConfig,
+  env: NodeJS.ProcessEnv = process.env,
+  options: { cwd?: string; sdk?: PiSdk; agentId?: RunAgentJobInput["agentId"] } = {}
+): PiAuthReadiness {
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const sdk = options.sdk ?? installedPiSdk;
+  const resolvedModel = resolvePiModelConfig(config, options.agentId ?? "strategist", env, { cwd });
+  if (resolvedModel.auth.type !== "openai-codex") {
+    return getPiAuthReadiness(config, env, { cwd, sdk, agentId: options.agentId });
+  }
+  const authStorage = createPiAuthStorage(resolvedModel, sdk);
+  if (!authStorage.logout) throw new Error("Pinned Pi SDK AuthStorage does not support OAuth logout.");
+  authStorage.logout(resolvedModel.provider);
+  return getPiAuthReadiness(config, env, { cwd, sdk, agentId: options.agentId });
+}
+
+function resolveConjectPiAgentDir(cwd: string, configuredAgentDir?: string): string {
+  const value = configuredAgentDir?.trim() || DEFAULT_CONJECT_PI_AGENT_DIR;
+  return resolveConjectStatePath(cwd, value, "runtime.pi.agentDir", "runtime.pi.agentDir must stay under .conject/ so Conject never reads user-level Pi configuration.");
+}
+
+export function resolvePiModelConfig(
+  config: ConjectConfig,
+  agentId: RunAgentJobInput["agentId"],
+  env: NodeJS.ProcessEnv,
+  options: { cwd?: string } = {}
+): ResolvedPiModelConfig {
+  const cwd = resolve(options.cwd ?? process.cwd());
   const modelConfig = { ...config.models.default, ...(config.models.agents[agentId] ?? {}) };
-  const missing = ["provider", "model", "apiKeyEnv"].filter((key) => !modelConfig[key as keyof typeof modelConfig]);
+  const missing = ["provider", "model"].filter((key) => !modelConfig[key as keyof typeof modelConfig]);
+  if (!modelConfig.auth && !modelConfig.apiKeyEnv) missing.push("auth");
   if (missing.length > 0) {
     throw new Error(
-      `Missing Pi model config field(s): models.default.${missing.join(", models.default.")}. Set provider, model, and apiKeyEnv in conject.yaml before using --runtime pi.`
+      `Missing Pi model config field(s): models.default.${missing.join(", models.default.")}. Set provider, model, and auth in conject.yaml before using --runtime pi.`
     );
   }
 
   const provider = modelConfig.provider!;
   const model = modelConfig.model!;
-  const apiKeyEnv = modelConfig.apiKeyEnv!;
-  const apiKey = env[apiKeyEnv];
-  if (!apiKey) {
-    throw new Error(`Missing Pi API key environment variable: ${apiKeyEnv}. Set it before using --runtime pi.`);
-  }
   if (modelConfig.thinking && !THINKING_LEVELS.has(modelConfig.thinking)) {
     throw new Error(`Invalid Pi thinking level '${modelConfig.thinking}'. Use one of: ${[...THINKING_LEVELS].join(", ")}.`);
   }
 
+  const authConfig = modelConfig.auth ?? { type: "apiKeyEnv" as const, env: modelConfig.apiKeyEnv! };
+  if (authConfig.type === "apiKeyEnv") {
+    const apiKey = env[authConfig.env];
+    if (!apiKey) {
+      throw new Error(`Missing Pi API key environment variable: ${authConfig.env}. Set it before using --runtime pi.`);
+    }
+    return {
+      provider,
+      model,
+      auth: {
+        type: "apiKeyEnv",
+        env: authConfig.env,
+        apiKey
+      },
+      thinking: modelConfig.thinking
+    };
+  }
+
+  if (provider !== "openai-codex") {
+    throw new Error("models.default.auth.type openai-codex requires models.default.provider: openai-codex.");
+  }
+  const storagePath = authConfig.storagePath?.trim() || DEFAULT_CONJECT_PI_AUTH_PATH;
+  const authPath = resolveConjectStatePath(
+    cwd,
+    storagePath,
+    "models.default.auth.storagePath",
+    "models.default.auth.storagePath must stay under .conject/ so Conject never reads user-level Codex or Pi configuration."
+  );
   return {
     provider,
     model,
-    apiKeyEnv,
-    apiKey,
+    auth: {
+      type: "openai-codex",
+      storagePath,
+      authPath
+    },
     thinking: modelConfig.thinking
   };
+}
+
+export function createPiAuthStorage(resolvedModel: ResolvedPiModelConfig, sdk: PiSdk = installedPiSdk): PiAuthStorage {
+  if (resolvedModel.auth.type === "apiKeyEnv") {
+    const authStorage = sdk.AuthStorage.inMemory();
+    authStorage.setRuntimeApiKey(resolvedModel.provider, resolvedModel.auth.apiKey);
+    return authStorage;
+  }
+  return sdk.AuthStorage.create(resolvedModel.auth.authPath);
+}
+
+function ensurePiAuthReady(resolvedModel: ResolvedPiModelConfig, authStorage: PiAuthStorage): void {
+  if (resolvedModel.auth.type !== "openai-codex") return;
+  if (hasStoredProviderAuth(authStorage, resolvedModel.provider)) return;
+  throw new Error(missingOAuthMessage(resolvedModel));
+}
+
+function hasStoredProviderAuth(authStorage: PiAuthStorage, provider: string): boolean {
+  if (authStorage.has?.(provider)) return true;
+  const status = authStorage.getAuthStatus?.(provider);
+  return status?.configured === true && status.source === "stored";
+}
+
+function missingOAuthMessage(resolvedModel: ResolvedPiModelConfig): string {
+  const storagePath = resolvedModel.auth.type === "openai-codex" ? resolvedModel.auth.storagePath : DEFAULT_CONJECT_PI_AUTH_PATH;
+  return `Missing Pi OAuth credentials for ${resolvedModel.provider} at ${storagePath}. Run: pnpm cli pi login`;
+}
+
+function resolveConjectStatePath(cwd: string, configuredPath: string, fieldName: string, outsideMessage: string): string {
+  if (isAbsolute(configuredPath)) {
+    throw new Error(`${fieldName} must be a relative path under .conject/.`);
+  }
+  const resolved = resolve(cwd, configuredPath);
+  const stateRoot = resolve(cwd, ".conject");
+  const pathFromState = relative(stateRoot, resolved);
+  const withinState = resolved === stateRoot || (!pathFromState.startsWith("..") && !isAbsolute(pathFromState));
+  if (!withinState) {
+    throw new Error(outsideMessage);
+  }
+  return resolved;
 }
 
 function buildPrompt(input: RunAgentJobInput, validationError?: string): string {

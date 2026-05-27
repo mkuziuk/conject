@@ -91,10 +91,24 @@ Config includes:
 - web query/fetch limits;
 - paper and web providers;
 - model default plus per-agent overrides;
+- model auth from either environment variables or project-local OpenAI Codex OAuth storage;
 - scoring weights;
 - advanced per-agent budgets.
 
-Secrets are never committed by default. Credentials come from environment variables referenced by `conject.yaml`; Pi runtime state stays under `.conject/` and must not read normal user-level Pi config. Each run snapshots the effective config for reproducibility.
+Secrets are never committed by default. Credentials come from environment variables referenced by `conject.yaml` or project-local OAuth storage declared in `models.*.auth`. Pi runtime state and auth storage stay under `.conject/` and must not read normal user-level Codex or Pi config. Each run snapshots the effective config for reproducibility.
+
+Default Pi auth uses OpenAI Codex OAuth:
+
+```yaml
+models:
+  default:
+    provider: openai-codex
+    model: gpt-5.5
+    thinking: xhigh
+    auth:
+      type: openai-codex
+      storagePath: .conject/pi/auth.json
+```
 
 Default presets:
 
@@ -145,6 +159,9 @@ conject open <run-id> <artifact-id>
 conject rank <run-id>
 conject implement <run-id> <hypothesis-id>
 conject export <run-id> --format markdown
+conject pi login
+conject pi logout
+conject pi status
 ```
 
 `conject run <run-id>` executes through ranking only. Builder runs only through `conject implement`.

@@ -1,9 +1,21 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline/promises";
 import type { HypothesisCard, ImplementationPack, Job, Run } from "@conject/artifacts";
 import { loadConfig, writeDefaultConfig } from "@conject/config";
 import { Orchestrator } from "@conject/core";
 import { exportRunMarkdown, materializeImplementationPack } from "@conject/export";
-import { MockAgentRuntime, PiAgentRuntime, ToolBackedResearchRuntime, checkPiSdkAvailability, type AgentRuntime } from "@conject/runtime";
+import {
+  MockAgentRuntime,
+  PiAgentRuntime,
+  ToolBackedResearchRuntime,
+  checkPiSdkAvailability,
+  getPiAuthReadiness,
+  loginPiModelAuth,
+  logoutPiModelAuth,
+  type AgentRuntime,
+  type PiOAuthLoginCallbacks
+} from "@conject/runtime";
 import { ConjectRepository, openDatabase } from "@conject/storage";
 import {
   ArxivPaperSearchProvider,
@@ -248,10 +260,107 @@ program
     throw new Error(result.error);
   });
 
+const piCommand = program.command("pi").description("Manage Conject-owned Pi authentication");
+
+piCommand
+  .command("login")
+  .description("Log in using the auth method configured in models.default.auth")
+  .action(async () => {
+    const config = loadConfig(process.cwd());
+    const readiness = getPiAuthReadiness(config);
+    if (readiness.authType === "apiKeyEnv") {
+      console.log(`Pi auth uses environment variable ${readiness.label}. No login is needed.`);
+      return;
+    }
+
+    const callbacks = createOAuthLoginCallbacks();
+    try {
+      const next = await loginPiModelAuth(config, callbacks);
+      console.log(`Stored ${next.provider} credentials at ${next.storagePath}.`);
+    } finally {
+      callbacks.close();
+    }
+  });
+
+piCommand
+  .command("logout")
+  .description("Remove credentials for the auth method configured in models.default.auth")
+  .action(async () => {
+    const config = loadConfig(process.cwd());
+    const readiness = getPiAuthReadiness(config);
+    if (readiness.authType === "apiKeyEnv") {
+      console.log(`Pi auth uses environment variable ${readiness.label}. Nothing to remove.`);
+      return;
+    }
+    const next = logoutPiModelAuth(config);
+    console.log(`Removed ${next.provider} credentials from ${next.storagePath}.`);
+  });
+
+piCommand
+  .command("status")
+  .description("Show configured Pi provider/model/auth readiness")
+  .action(async () => {
+    const config = loadConfig(process.cwd());
+    try {
+      const readiness = getPiAuthReadiness(config);
+      console.log(`Provider: ${readiness.provider}`);
+      console.log(`Model: ${readiness.model}`);
+      console.log(`Auth: ${readiness.authType}`);
+      if (readiness.storagePath) console.log(`Storage: ${readiness.storagePath}`);
+      if (readiness.source) console.log(`Source: ${readiness.source}${readiness.label ? ` (${readiness.label})` : ""}`);
+      console.log(`Ready: ${readiness.ready ? "yes" : "no"}`);
+      if (readiness.error) console.log(`Next: ${readiness.error}`);
+    } catch (error) {
+      console.log(`Ready: no`);
+      console.log(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    }
+  });
+
 program.parseAsync(process.argv).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
+
+function createOAuthLoginCallbacks(): PiOAuthLoginCallbacks & { close: () => void } {
+  if (!process.stdin.isTTY) throw new Error("Pi OAuth login requires an interactive terminal.");
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const ask = async (message: string): Promise<string> => rl.question(`${message} `);
+
+  return {
+    onAuth: (info) => {
+      console.log(info.instructions ?? "Complete OAuth login in your browser.");
+      console.log(info.url);
+      openBrowser(info.url);
+    },
+    onDeviceCode: (info) => {
+      console.log(`Open ${info.verificationUri} and enter code ${info.userCode}.`);
+    },
+    onPrompt: (prompt) => ask(prompt.message),
+    onProgress: (message) => console.log(message),
+    onManualCodeInput: () => ask("Paste the authorization code or full redirect URL, or complete login in the browser:"),
+    onSelect: async (prompt) => {
+      console.log(prompt.message);
+      for (const option of prompt.options) console.log(`${option.id}: ${option.label}`);
+      const selected = await ask("Select option id:");
+      return selected.trim() || undefined;
+    },
+    close: () => rl.close()
+  };
+}
+
+function openBrowser(url: string): void {
+  const command =
+    process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : process.env.DISPLAY ? "xdg-open" : undefined;
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  if (!command) return;
+  try {
+    const child = spawn(command, args, { detached: true, stdio: "ignore" });
+    child.unref();
+  } catch {
+    // Printing the URL above is the reliable fallback.
+  }
+}
 
 async function withRepo<T>(fn: (repo: ConjectRepository) => Promise<T>): Promise<T> {
   const db = openDatabase(process.cwd());

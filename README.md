@@ -26,13 +26,14 @@ The default run path uses a deterministic mock Researcher. To use configured pap
 TAVILY_API_KEY="..." pnpm cli run <run-id> --real-research
 ```
 
-Pi integration is isolated behind the runtime interface and is not required for default tests. The Pi SDK is a pinned project dependency, and Conject does not read your normal user-level Pi config. Check project Pi readiness with:
+Pi integration is isolated behind the runtime interface and is not required for default tests. The Pi SDK is a pinned project dependency, and Conject does not read your normal user-level Codex or Pi config. Check project Pi readiness with:
 
 ```bash
+pnpm cli pi status
 pnpm cli pi-check
 ```
 
-Live Pi runs require explicit model settings in `conject.yaml` and the referenced API key in the process environment:
+The default Pi model config uses OpenAI Codex OAuth through Conject-owned project storage:
 
 ```yaml
 runtime:
@@ -40,13 +41,34 @@ runtime:
     agentDir: .conject/pi
 models:
   default:
-    provider: anthropic
-    model: claude-sonnet-4-5
-    apiKeyEnv: ANTHROPIC_API_KEY
-    thinking: medium
+    provider: openai-codex
+    model: gpt-5.5
+    thinking: xhigh
+    auth:
+      type: openai-codex
+      storagePath: .conject/pi/auth.json
 ```
 
-`runtime.pi.agentDir` must stay under `.conject/`; the runtime uses in-memory Pi auth with `apiKeyEnv` and does not use `~/.pi`.
+Run this once to create `.conject/pi/auth.json`:
+
+```bash
+pnpm cli pi login
+```
+
+`runtime.pi.agentDir` and `models.default.auth.storagePath` must stay under `.conject/`; the runtime passes that project-local auth store to Pi and does not use `~/.codex` or `~/.pi`.
+
+API-key providers are still supported:
+
+```yaml
+models:
+  default:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    thinking: medium
+    auth:
+      type: apiKeyEnv
+      env: ANTHROPIC_API_KEY
+```
 
 Builder defaults to deterministic scaffold materialization:
 

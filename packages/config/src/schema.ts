@@ -16,10 +16,22 @@ export const AgentBudgetSchema = z.object({
   maxOutputTokens: z.number().int().positive().optional()
 });
 
+export const AgentModelAuthSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("apiKeyEnv"),
+    env: z.string().min(1)
+  }),
+  z.object({
+    type: z.literal("openai-codex"),
+    storagePath: z.string().min(1).optional()
+  })
+]);
+
 export const AgentModelSchema = z.object({
   provider: z.string().optional(),
   model: z.string().optional(),
   apiKeyEnv: z.string().optional(),
+  auth: AgentModelAuthSchema.optional(),
   thinking: z.string().optional()
 });
 
@@ -115,7 +127,15 @@ export const defaultConfig: ConjectConfig = {
     }
   },
   models: {
-    default: {},
+    default: {
+      provider: "openai-codex",
+      model: "gpt-5.5",
+      thinking: "xhigh",
+      auth: {
+        type: "openai-codex",
+        storagePath: ".conject/pi/auth.json"
+      }
+    },
     agents: {}
   },
   scoring: {
