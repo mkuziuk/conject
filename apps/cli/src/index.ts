@@ -324,6 +324,26 @@ program.parseAsync(process.argv).catch((error: unknown) => {
 });
 
 function createOAuthLoginCallbacks(options: { manual: boolean }): PiOAuthLoginCallbacks & { close: () => void } {
+  if (!options.manual) {
+    return {
+      onAuth: (info) => {
+        console.log(info.instructions ?? "Complete OAuth login in your browser.");
+        console.log(info.url);
+        console.log("Waiting for browser callback. If it does not complete, rerun with: pnpm cli pi login --manual");
+        openBrowser(info.url);
+      },
+      onDeviceCode: (info) => {
+        console.log(`Open ${info.verificationUri} and enter code ${info.userCode}.`);
+      },
+      onPrompt: async () => {
+        throw new Error("Browser OAuth callback did not complete. Rerun with: pnpm cli pi login --manual");
+      },
+      onProgress: (message) => console.log(message),
+      onSelect: async () => undefined,
+      close: () => undefined
+    };
+  }
+
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const ask = async (message: string): Promise<string> => {
     if (!process.stdin.isTTY) throw new Error("Pi OAuth manual code entry requires an interactive terminal.");
@@ -334,7 +354,6 @@ function createOAuthLoginCallbacks(options: { manual: boolean }): PiOAuthLoginCa
     onAuth: (info) => {
       console.log(info.instructions ?? "Complete OAuth login in your browser.");
       console.log(info.url);
-      if (!options.manual) console.log("Waiting for browser callback. If it does not complete, rerun with: pnpm cli pi login --manual");
       openBrowser(info.url);
     },
     onDeviceCode: (info) => {
