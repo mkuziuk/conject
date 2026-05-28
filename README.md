@@ -10,18 +10,31 @@ Before setup, install:
 
 - Git
 - Node.js `>=22.19.0`
-- npm
+- npm, which is included with Node.js
 
 Clone Conject once into a separate source/tools directory:
+
+macOS, Linux, or WSL:
 
 ```bash
 mkdir -p ~/Projects
 cd ~/Projects
-git clone git@github.com:mkuziuk/conject.git
+git clone https://github.com/mkuziuk/conject.git
 cd conject
 ```
 
-Build and link the `conject-pi` launcher:
+Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\Projects"
+Set-Location "$HOME\Projects"
+git clone https://github.com/mkuziuk/conject.git
+Set-Location conject
+```
+
+SSH clone URLs also work if your GitHub SSH key is already configured.
+
+Build and link the `conject-pi` launcher. These commands are the same on all platforms:
 
 ```bash
 npm install
@@ -31,17 +44,29 @@ npm run link:cli
 
 Then leave the Conject source repo and open the project you want to research or build:
 
+macOS, Linux, or WSL:
+
 ```bash
 cd ~/Projects/<target-project>
 conject-pi --doctor
 conject-pi
 ```
 
+Windows PowerShell:
+
+```powershell
+Set-Location "$HOME\Projects\<target-project>"
+conject-pi --doctor
+conject-pi
+```
+
 The directory where you run `conject-pi` is the target project. Conject will inspect that project and write visible research artifacts there, for example `research/brief.md`, `research/review.md`, and `research/proposal.md`.
+
+On Windows, use Windows Terminal or WSL for the best Pi TUI behavior.
 
 Typical layout:
 
-```bash
+```text
 ~/Projects/conject/          # Conject source checkout
 ~/Projects/<target-project>/ # Project being researched or built
 ```
@@ -61,6 +86,8 @@ Generated state and outputs:
 - Conject/Pi agent state: `~/.pi-conject/agent`
 - target project sessions: `<target-project>/.pi/sessions`
 - target project research artifacts: `<target-project>/research/`
+
+On Windows, `~` means your user profile directory; PowerShell will show equivalent paths with backslashes.
 
 Use `conject-pi --print-env` to see the exact environment.
 
