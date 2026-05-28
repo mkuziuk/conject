@@ -2,7 +2,26 @@
 
 Conject Pi is a small research-oriented package for Pi. It does not replace Pi with a custom TUI or hidden workflow engine. It adds a Conject launcher, a minimal system prompt, research tools, and Agent Skills for a visible research workflow.
 
-## Install
+## Setup With Pi
+
+Conject Pi is installed from this source repo. You do not need to install a global `pi` binary first; this package uses the pinned Pi dependency declared in `package.json`.
+
+Before setup, install:
+
+- Git
+- Node.js `>=22.19.0`
+- npm
+
+Clone Conject once into a separate source/tools directory:
+
+```bash
+mkdir -p ~/Projects
+cd ~/Projects
+git clone git@github.com:mkuziuk/conject.git
+cd conject
+```
+
+Build and link the `conject-pi` launcher:
 
 ```bash
 npm install
@@ -10,11 +29,21 @@ npm run build
 npm run link:cli
 ```
 
-Then run:
+Then leave the Conject source repo and open the project you want to research or build:
 
 ```bash
+cd ~/Projects/<target-project>
 conject-pi --doctor
 conject-pi
+```
+
+The directory where you run `conject-pi` is the target project. Conject will inspect that project and write visible research artifacts there, for example `research/brief.md`, `research/review.md`, and `research/proposal.md`.
+
+Typical layout:
+
+```bash
+~/Projects/conject/          # Conject source checkout
+~/Projects/<target-project>/ # Project being researched or built
 ```
 
 ## Isolation
@@ -22,10 +51,16 @@ conject-pi
 `conject-pi` runs the pinned Pi dependency from this package and isolates Conject state from your normal Pi install:
 
 - `PI_CODING_AGENT_DIR=$HOME/.pi-conject/agent`
-- `PI_CODING_AGENT_SESSION_DIR=$PWD/.pi/sessions`
+- `PI_CODING_AGENT_SESSION_DIR=<target-project>/.pi/sessions`
 - `PI_SKIP_VERSION_CHECK=1`
 
 It does not touch `~/.pi/agent`.
+
+Generated state and outputs:
+
+- Conject/Pi agent state: `~/.pi-conject/agent`
+- target project sessions: `<target-project>/.pi/sessions`
+- target project research artifacts: `<target-project>/research/`
 
 Use `conject-pi --print-env` to see the exact environment.
 
