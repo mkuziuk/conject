@@ -1,120 +1,108 @@
-# Conject
+# Conject Pi
 
-Local TypeScript-first research harness for generating ranked, evidence-backed hypotheses from open-ended prompts.
+Conject Pi is a small research-oriented package for Pi. It does not replace Pi with a custom TUI or hidden workflow engine. It adds a Conject launcher, a minimal system prompt, research tools, and Agent Skills for a visible research workflow.
 
-Start with:
+## Install
 
 ```bash
-pnpm install
-pnpm cli init
-pnpm cli auth login
-pnpm cli
-pnpm cli new "Find implementable ideas for robust IMF in hyperspectral unmixing"
-pnpm cli run <run-id>
-pnpm cli rank <run-id>
-pnpm cli export <run-id>
+npm install
+npm run build
+npm run link:cli
 ```
 
-`pnpm cli` opens the Conject TUI. Inside the TUI, use slash commands:
+Then run:
+
+```bash
+conject-pi --doctor
+conject-pi
+```
+
+## Isolation
+
+`conject-pi` runs the pinned Pi dependency from this package and isolates Conject state from your normal Pi install:
+
+- `PI_CODING_AGENT_DIR=$HOME/.pi-conject/agent`
+- `PI_CODING_AGENT_SESSION_DIR=$PWD/.pi/sessions`
+- `PI_SKIP_VERSION_CHECK=1`
+
+It does not touch `~/.pi/agent`.
+
+Use `conject-pi --print-env` to see the exact environment.
+
+## Workflow
+
+Ask naturally, for example:
 
 ```text
-/login
-/status
-/new robust hyperspectral unmixing
-/run
-/export
-/implement HYP-001
+Research whether we should implement a lightweight paper-ranking workflow for this repo.
 ```
 
-All subcommands remain available for scripts.
+Conject should:
 
-For local development, link the terminal command after building:
+1. write `research/brief.md`;
+2. split the idea into several research topics;
+3. call researcher subagents;
+4. write memos under `research/agents/`;
+5. call a reviewer subagent;
+6. write `research/review.md`;
+7. write `research/proposal.md`;
+8. show a concise summary of the review and proposal plus artifact paths in chat.
+
+There are no Conject run IDs, hidden SQLite databases, or workflow widgets. The visible Markdown files are the state.
+
+## Tools
+
+The extension registers:
+
+- `conject_paper_search`
+- `conject_web_search`
+- `conject_extract_pdf`
+- `conject_write_artifact`
+- `conject_present_proposal`
+- `conject_spawn_researcher`
+- `conject_spawn_reviewer`
+
+Web search is optional. Configure it with one of:
+
+- `TAVILY_API_KEY`
+- `SEARXNG_BASE_URL`
+- `CONJECT_SEARXNG_URL`
+
+OpenAlex paper search works without a key. Set `OPENALEX_MAILTO` if you want polite-pool OpenAlex requests.
+
+## Skills
+
+Conject ships six Pi skills:
+
+- `conject-research-workflow`
+- `conject-research-planning`
+- `conject-research-agent`
+- `conject-source-evidence`
+- `conject-review-ranking`
+- `conject-implementation-proposal`
+
+The high-level workflow skill coordinates the lower-level skills. Researcher subagents use `conject-research-agent` and `conject-source-evidence`; the reviewer uses `conject-review-ranking` and `conject-implementation-proposal`.
+
+## Subagents
+
+Subagent prompts live under `subagents/`:
+
+- `researcher.md`
+- `reviewer.md`
+- `builder.md`
+
+The researcher and reviewer tools read these prompts. After a proposal is shown, reply `build this` to hand the approved proposal to the builder prompt in the normal Pi session.
+
+Subagent rows stream child progress in the TUI. Collapsed rows show status plus the last child tool calls; press Ctrl+O to expand Pi tool output and inspect full child transcripts.
+
+## Thinking
+
+Use `/thinking` to show the current reasoning effort. Use `/thinking off|minimal|low|medium|high|xhigh` to change it.
+
+## Development
 
 ```bash
-pnpm link:cli
-conject
+npm run typecheck
+npm test
+npm run dev -- --doctor
 ```
-
-User-facing runs and implementations always go through Pi. The Pi SDK is a pinned implementation detail, and Conject does not read your normal user-level Codex or Pi config. Check Conject auth and LLM readiness with:
-
-```bash
-pnpm cli auth status
-pnpm cli pi-check
-```
-
-The default model config uses OpenAI Codex OAuth through Conject-owned global auth storage:
-
-```yaml
-runtime:
-  default: pi
-  pi:
-    agentDir: .conject/pi
-models:
-  default:
-    provider: openai-codex
-    model: gpt-5.5
-    thinking: xhigh
-    auth:
-      type: openai-codex
-      scope: global
-```
-
-Run this once to create `~/.conject/auth/auth.json`:
-
-```bash
-pnpm cli auth login
-```
-
-If the browser callback cannot complete, use the explicit paste-code fallback:
-
-```bash
-pnpm cli auth login --manual
-```
-
-Project-local auth is still supported with `auth.scope: project`, which defaults to `.conject/auth/auth.json`; explicit legacy paths such as `.conject/pi/auth.json` still work. The runtime passes Conject-owned auth storage to the SDK and does not use `~/.codex` or `~/.pi`.
-
-Where data is stored:
-
-```text
-project-root/
-  conject.yaml
-  .conject/
-    conject.sqlite
-    runs/<run-id>/
-    pi/
-    auth/auth.json
-  exports/<run-id>/
-  implementations/<run-id>/<hypothesis-id>/
-```
-
-`.conject/` is private runtime state. `exports/` and `implementations/` are visible project outputs.
-
-API-key providers are still supported:
-
-```yaml
-models:
-  default:
-    provider: anthropic
-    model: claude-sonnet-4-5
-    thinking: medium
-    auth:
-      type: apiKeyEnv
-      env: ANTHROPIC_API_KEY
-```
-
-Builder runs through Pi and materializes the returned implementation pack:
-
-```bash
-pnpm cli implement <run-id> <hypothesis-id>
-```
-
-Provider smoke tests:
-
-```bash
-pnpm cli search "robust hyperspectral unmixing" --type paper --limit 2
-pnpm cli search "robust hyperspectral unmixing" --type web --limit 2
-```
-
-Paper search uses OpenAlex first and works without a key. Semantic Scholar can use `SEMANTIC_SCHOLAR_API_KEY` when present. Web search needs either `TAVILY_API_KEY` or a configured `providers.web.searxng.baseUrl` in `conject.yaml`.
-
-SearXNG is optional. It is not another API key; it is a self-hosted metasearch server URL. Since Tavily is configured through `TAVILY_API_KEY`, you can leave `providers.web.searxng.enabled: false`.

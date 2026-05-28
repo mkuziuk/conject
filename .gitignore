@@ -1,7 +1,10 @@
-.conject/
 node_modules/
 dist/
 coverage/
 .DS_Store
-*.log
-*.tsbuildinfo
+.env
+.env.*
+
+# Project-local Pi/Conject runtime state.
+.pi/sessions/
+research/
