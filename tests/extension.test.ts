@@ -20,11 +20,12 @@ describe("Conject extension", () => {
     const pi = new FakePi();
     await createConjectExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
 
-    expect([...pi.commands.keys()].sort()).toEqual(["conject-doctor", "thinking"]);
+    expect([...pi.commands.keys()].sort()).toEqual(["conject-apply-build", "conject-doctor", "thinking"]);
     expect([...pi.tools.keys()].sort()).toEqual([
       "conject_extract_pdf",
       "conject_paper_search",
       "conject_present_proposal",
+      "conject_spawn_builder",
       "conject_spawn_researcher",
       "conject_spawn_reviewer",
       "conject_web_search",
@@ -128,7 +129,7 @@ describe("Conject extension", () => {
       const text = result.content[0]?.type === "text" ? result.content[0].text : "";
       expect(text).toContain("Review says this is ready");
       expect(text).not.toContain("# Proposal");
-      expect(text).toContain("Reply `build this`");
+      expect(text).toContain("implementation request");
       expect((result.details as { content?: string }).content).toContain("# Proposal");
       expect(readFileSync(join(dir, "research", "proposal.md"), "utf8")).toContain("Build the thing.");
     } finally {
@@ -136,7 +137,7 @@ describe("Conject extension", () => {
     }
   });
 
-  it("turns 'build this' into a builder handoff when a proposal exists", async () => {
+  it("turns implementation intent into a builder tool request when a proposal exists", async () => {
       const dir = mkdtempSync(join(tmpdir(), "conject-extension-"));
       try {
         const pi = new FakePi();
@@ -148,9 +149,104 @@ describe("Conject extension", () => {
 
       expect(result.action).toBe("transform");
       if (result.action === "transform") {
-        expect(result.text).toContain("## Builder Guidance");
+        expect(result.text).toContain("conject_spawn_builder");
+        expect(result.text).toContain("Do not use bash, edit, or write");
         expect(result.text).toContain("Approved work.");
       }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("writes builder output under implementations and records a build report", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "conject-builder-"));
+    try {
+      mkdirSync(join(dir, "research"), { recursive: true });
+      writeFileSync(join(dir, "research", "proposal.md"), "# Prototype\n\nBuild a minimal prototype.", "utf8");
+      const builderRunner: ChildRunner = async (input) => {
+        writeFileSync(join(input.cwd, "README.md"), "# Built\n", "utf8");
+        writeFileSync(
+          join(input.cwd, "BUILD_MANIFEST.json"),
+          JSON.stringify(
+            {
+              buildId: "prototype",
+              implementationPath: "implementations/prototype",
+              files: [{ source: "README.md", target: "README.md", action: "copy" }],
+              validationCommands: [],
+              notes: []
+            },
+            null,
+            2
+          ),
+          "utf8"
+        );
+        return { stdout: "## Summary\n\nBuilt prototype.\n\n## Validation\n\nNot run.", stderr: "", exitCode: 0 };
+      };
+      const pi = new FakePi();
+      await createConjectExtensionFactory({ childRunner: builderRunner })(pi.api);
+
+      const result = await pi
+        .tool("conject_spawn_builder")
+        .execute("tool-1", { proposalPath: "research/proposal.md", buildId: "prototype" }, undefined, undefined, fakeContext(dir));
+
+      expect(existsSync(join(dir, "implementations", "prototype", "README.md"))).toBe(true);
+      expect(existsSync(join(dir, "implementations", "prototype", "BUILD_MANIFEST.json"))).toBe(true);
+      expect(readFileSync(join(dir, "research", "builds", "prototype.md"), "utf8")).toContain("Built prototype");
+      expect((result.details as { implementationPath?: string }).implementationPath).toBe("implementations/prototype");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects Python builder output without an implementation-local venv", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "conject-builder-"));
+    try {
+      mkdirSync(join(dir, "research"), { recursive: true });
+      writeFileSync(join(dir, "research", "proposal.md"), "# Python Prototype\n\nBuild Python.", "utf8");
+      const builderRunner: ChildRunner = async (input) => {
+        writeFileSync(join(input.cwd, "main.py"), "print('hello')\n", "utf8");
+        writeFileSync(
+          join(input.cwd, "BUILD_MANIFEST.json"),
+          JSON.stringify({ buildId: "python-prototype", files: [{ source: "main.py", target: "main.py", action: "copy" }] }),
+          "utf8"
+        );
+        return { stdout: "## Summary\n\nBuilt Python.", stderr: "", exitCode: 0 };
+      };
+      const pi = new FakePi();
+      await createConjectExtensionFactory({ childRunner: builderRunner })(pi.api);
+
+      await expect(
+        pi
+          .tool("conject_spawn_builder")
+          .execute("tool-1", { proposalPath: "research/proposal.md", buildId: "python-prototype" }, undefined, undefined, fakeContext(dir))
+      ).rejects.toThrow(/requires \.venv/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("dry-runs and applies manifest-listed build files", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "conject-apply-"));
+    try {
+      const buildDir = join(dir, "implementations", "demo");
+      mkdirSync(buildDir, { recursive: true });
+      writeFileSync(join(buildDir, "README.md"), "# Demo\n", "utf8");
+      writeFileSync(
+        join(buildDir, "BUILD_MANIFEST.json"),
+        JSON.stringify({ buildId: "demo", files: [{ source: "README.md", target: "README.md", action: "copy" }] }),
+        "utf8"
+      );
+      const pi = new FakePi();
+      await createConjectExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
+      const ctx = fakeCommandContext(dir, pi);
+
+      await pi.command("conject-apply-build").handler("demo", ctx);
+      expect(existsSync(join(dir, "README.md"))).toBe(false);
+      expect(String(pi.messages.at(-1)?.content)).toContain("dry run");
+
+      await pi.command("conject-apply-build").handler("demo --yes", ctx);
+      expect(readFileSync(join(dir, "README.md"), "utf8")).toContain("# Demo");
+      expect(String(pi.messages.at(-1)?.content)).toContain("Build merged");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

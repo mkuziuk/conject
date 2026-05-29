@@ -17,6 +17,10 @@ Return Markdown only:
 
 ## Key Evidence
 
+## Method Details and Concrete Examples
+
+Explain the method or mechanism in enough detail for an implementer to understand it. Include concrete inputs, outputs, assumptions, and at least one worked example tied to the assigned task.
+
 ## Sources
 
 ## Contradictions or Uncertainty

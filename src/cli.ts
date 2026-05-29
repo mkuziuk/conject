@@ -16,11 +16,14 @@ import { configureConjectEnvironment, resolveConjectEnvironment } from "./env.js
 import { createConjectExtensionFactory } from "./extension.js";
 import { getConjectSkillsPath } from "./paths.js";
 import { CONJECT_SYSTEM_PROMPT } from "./prompt.js";
+import { runConjectSetup } from "./setup.js";
 
 const PACKAGE_COMMANDS = new Set(["install", "remove", "uninstall", "update", "list", "config"]);
+const CONJECT_COMMANDS = new Set(["credentials", "setup"]);
 
 export function buildConjectArgs(userArgs: string[], env: NodeJS.ProcessEnv = process.env): string[] {
   if (env.CONJECT_INTERNAL_CHILD === "1") return userArgs;
+  if (userArgs[0] && CONJECT_COMMANDS.has(userArgs[0])) return userArgs;
   if (userArgs[0] && PACKAGE_COMMANDS.has(userArgs[0])) return userArgs;
 
   return ["--system-prompt", CONJECT_SYSTEM_PROMPT, "--skill", getConjectSkillsPath(), ...userArgs];
@@ -42,6 +45,11 @@ export function formatPrintEnv(cwd = process.cwd(), env: NodeJS.ProcessEnv = pro
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   if (argv[0] === "credentials") {
     await runCredentialCommand(argv.slice(1));
+    return;
+  }
+
+  if (argv[0] === "setup") {
+    await runSetupCommand(argv.slice(1));
     return;
   }
 
@@ -107,13 +115,35 @@ async function runCredentialCommand(args: string[]): Promise<void> {
   throw new Error(`Unknown credentials command: ${command}`);
 }
 
+async function runSetupCommand(args: string[]): Promise<void> {
+  const command = args[0];
+  if (command === "--help" || command === "-h" || command === "help") {
+    console.log(formatSetupHelp());
+    return;
+  }
+  if (command) throw new Error(`Unknown setup argument: ${command}`);
+  await runConjectSetup();
+}
+
 function formatCredentialHelp(): string {
   return [
     "Usage:",
+    "  conject setup",
     "  conject credentials path",
     "  conject credentials init",
     "  conject credentials status",
     "  conject credentials set <KEY> --stdin"
+  ].join("\n");
+}
+
+function formatSetupHelp(): string {
+  return [
+    "Usage:",
+    "  conject setup",
+    "",
+    "Guides model provider auth and Conject tool credentials.",
+    "Model auth is stored in ~/.conject/agent/auth.json.",
+    "Tool credentials are stored in ~/.conject/credentials.env."
   ].join("\n");
 }
 

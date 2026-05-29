@@ -1,8 +1,17 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { mkdir, readFile } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Type } from "typebox";
 import { getMarkdownTheme, type AgentToolResult, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import {
+  BUILD_MANIFEST_NAME,
+  applyBuildManifest,
+  chooseBuildId,
+  defaultBuildIdFromProposal,
+  getBuildPath
+} from "../builds.js";
 import { getConjectSkillsPath } from "../paths.js";
 import { loadSubagentPrompt } from "../subagent-prompts.js";
 import { safeFileSegment, writeResearchArtifact } from "./artifacts.js";
@@ -11,6 +20,7 @@ import { textResult, truncateText } from "./result.js";
 const DEFAULT_CHILD_OUTPUT_CHARS = 60_000;
 const CHILD_TOOL_PREVIEW_CHARS = 80;
 const SUMMARY_CHARS = 1_200;
+const SUBAGENT_UPDATE_INTERVAL_MS = 2_000;
 
 export interface ChildRunInput {
   cwd: string;
@@ -58,10 +68,12 @@ export interface ChildRunTrace {
 }
 
 export interface SpawnDetails {
-  role: "researcher" | "reviewer";
+  role: SubagentRole;
   status: "running" | "done" | "failed";
   title: string;
   taskId?: string;
+  implementationPath?: string;
+  manifestPath?: string;
   artifactPath?: string;
   errorArtifactPath?: string;
   exitCode?: number;
@@ -71,6 +83,8 @@ export interface SpawnDetails {
   error?: string;
   trace: ChildRunTrace;
 }
+
+type SubagentRole = "researcher" | "reviewer" | "builder";
 
 interface SpawnResearcherParams {
   taskId: string;
@@ -84,6 +98,14 @@ interface SpawnReviewerParams {
   objective: string;
   briefPath?: string;
   memoPaths?: string[];
+  context?: string;
+  maxOutputChars?: number;
+}
+
+interface SpawnBuilderParams {
+  proposalPath?: string;
+  buildId?: string;
+  implementationRoot?: string;
   context?: string;
   maxOutputChars?: number;
 }
@@ -102,6 +124,14 @@ const ReviewerParams = Type.Object({
   memoPaths: Type.Optional(Type.Array(Type.String(), { description: "Researcher memo paths to review." })),
   context: Type.Optional(Type.String({ description: "Additional synthesis context." })),
   maxOutputChars: Type.Optional(Type.Number({ description: "Maximum review chars to keep. Default 60000." }))
+});
+
+const BuilderParams = Type.Object({
+  proposalPath: Type.Optional(Type.String({ description: "Approved proposal path. Default research/proposal.md." })),
+  buildId: Type.Optional(Type.String({ description: "Stable implementation id. Defaults to a slug from the proposal title." })),
+  implementationRoot: Type.Optional(Type.String({ description: "Relative implementation root. Default implementations." })),
+  context: Type.Optional(Type.String({ description: "Additional build context or user constraints." })),
+  maxOutputChars: Type.Optional(Type.Number({ description: "Maximum build report chars to keep. Default 60000." }))
 });
 
 export function createSpawnResearcherTool(childRunner: ChildRunner = runChildConject): ToolDefinition {
@@ -133,6 +163,7 @@ export function createSpawnResearcherTool(childRunner: ChildRunner = runChildCon
         "## Required Memo Format",
         "- Summary",
         "- Key evidence",
+        "- Method details and concrete examples: explain the method/mechanism, concrete inputs and outputs, assumptions, and at least one worked example tied to this task",
         "- Sources",
         "- Contradictions or uncertainty",
         "- Open questions"
@@ -143,34 +174,38 @@ export function createSpawnResearcherTool(childRunner: ChildRunner = runChildCon
         title: input.title,
         taskId: input.taskId
       });
-      emit(createInitialTrace(task), "running");
+      try {
+        emit(createInitialTrace(task), "running");
 
-      const result = await childRunner({
-        cwd: ctx.cwd,
-        systemPrompt: prompt.prompt,
-        task,
-        tools: prompt.tools,
-        signal,
-        onUpdate: (trace) => emit(trace, "running")
-      });
-      const trace = normalizeTrace(result, task);
-      const output = truncateText(getChildOutput(result, trace), maxOutputChars);
-      await assertChildSuccess(ctx.cwd, safeFileSegment(input.taskId), "researcher", result, output, trace);
-      const artifact = await writeResearchArtifact(ctx.cwd, `research/agents/${safeFileSegment(input.taskId)}.md`, output);
-      const summary = summarizeMarkdown(output, ["Summary", "Key evidence"]);
-      const details: SpawnDetails = {
-        role: "researcher",
-        status: "done",
-        title: input.title,
-        taskId: input.taskId,
-        artifactPath: artifact.path,
-        exitCode: result.exitCode,
-        stderr: result.stderr,
-        outputChars: output.length,
-        summary,
-        trace: { ...trace, finalOutput: output }
-      };
-      return textResult(formatSubagentSuccessText(details), details);
+        const result = await childRunner({
+          cwd: ctx.cwd,
+          systemPrompt: prompt.prompt,
+          task,
+          tools: prompt.tools,
+          signal,
+          onUpdate: (trace) => emit(trace, "running")
+        });
+        const trace = normalizeTrace(result, task);
+        const output = truncateText(getChildOutput(result, trace), maxOutputChars);
+        await assertChildSuccess(ctx.cwd, safeFileSegment(input.taskId), "researcher", result, output, trace);
+        const artifact = await writeResearchArtifact(ctx.cwd, `research/agents/${safeFileSegment(input.taskId)}.md`, output);
+        const summary = summarizeMarkdown(output, ["Summary", "Key evidence"]);
+        const details: SpawnDetails = {
+          role: "researcher",
+          status: "done",
+          title: input.title,
+          taskId: input.taskId,
+          artifactPath: artifact.path,
+          exitCode: result.exitCode,
+          stderr: result.stderr,
+          outputChars: output.length,
+          summary,
+          trace: { ...trace, finalOutput: output }
+        };
+        return textResult(formatSubagentSuccessText(details), details);
+      } finally {
+        emit.cancelPending();
+      }
     },
     renderCall(args, theme) {
       const input = args as SpawnResearcherParams;
@@ -221,41 +256,170 @@ export function createSpawnReviewerTool(childRunner: ChildRunner = runChildConje
         role: "reviewer",
         title: "Review research workflow"
       });
-      emit(createInitialTrace(task), "running");
+      try {
+        emit(createInitialTrace(task), "running");
 
-      const result = await childRunner({
-        cwd: ctx.cwd,
-        systemPrompt: prompt.prompt,
-        task,
-        tools: prompt.tools,
-        signal,
-        onUpdate: (trace) => emit(trace, "running")
-      });
-      const trace = normalizeTrace(result, task);
-      const output = truncateText(getChildOutput(result, trace), maxOutputChars);
-      await assertChildSuccess(ctx.cwd, "reviewer", "reviewer", result, output, trace);
-      const reviewErrors = validateReviewerOutput(output);
-      if (reviewErrors.length > 0) {
-        const artifact = await writeChildErrorArtifact(ctx.cwd, "reviewer", "reviewer", result, output, reviewErrors, trace);
-        throw new Error(`Reviewer output failed validation. Diagnostics written to ${artifact.path}: ${reviewErrors.join("; ")}`);
+        const result = await childRunner({
+          cwd: ctx.cwd,
+          systemPrompt: prompt.prompt,
+          task,
+          tools: prompt.tools,
+          signal,
+          onUpdate: (trace) => emit(trace, "running")
+        });
+        const trace = normalizeTrace(result, task);
+        const output = truncateText(getChildOutput(result, trace), maxOutputChars);
+        await assertChildSuccess(ctx.cwd, "reviewer", "reviewer", result, output, trace);
+        const reviewErrors = validateReviewerOutput(output);
+        if (reviewErrors.length > 0) {
+          const artifact = await writeChildErrorArtifact(ctx.cwd, "reviewer", "reviewer", result, output, reviewErrors, trace);
+          throw new Error(`Reviewer output failed validation. Diagnostics written to ${artifact.path}: ${reviewErrors.join("; ")}`);
+        }
+        const artifact = await writeResearchArtifact(ctx.cwd, "research/review.md", output);
+        const summary = summarizeMarkdown(output, ["Verdict", "Recommendation", "Recommended Next Scope"]);
+        const details: SpawnDetails = {
+          role: "reviewer",
+          status: "done",
+          title: "Review research workflow",
+          artifactPath: artifact.path,
+          exitCode: result.exitCode,
+          stderr: result.stderr,
+          outputChars: output.length,
+          summary,
+          trace: { ...trace, finalOutput: output }
+        };
+        return textResult(formatSubagentSuccessText(details), details);
+      } finally {
+        emit.cancelPending();
       }
-      const artifact = await writeResearchArtifact(ctx.cwd, "research/review.md", output);
-      const summary = summarizeMarkdown(output, ["Verdict", "Recommendation", "Recommended Next Scope"]);
-      const details: SpawnDetails = {
-        role: "reviewer",
-        status: "done",
-        title: "Review research workflow",
-        artifactPath: artifact.path,
-        exitCode: result.exitCode,
-        stderr: result.stderr,
-        outputChars: output.length,
-        summary,
-        trace: { ...trace, finalOutput: output }
-      };
-      return textResult(formatSubagentSuccessText(details), details);
     },
     renderCall(_args, theme) {
       return new Text(`${theme.fg("toolTitle", theme.bold("reviewer"))} ${theme.fg("accent", "research ranking")}`, 0, 0);
+    },
+    renderResult: renderSubagentResult
+  };
+}
+
+export function createSpawnBuilderTool(childRunner: ChildRunner = runChildConject): ToolDefinition {
+  return {
+    name: "conject_spawn_builder",
+    label: "Builder",
+    description: "Spawn a Conject builder subagent to implement the approved research proposal in an isolated implementation folder.",
+    promptSnippet: "conject_spawn_builder implements an approved Conject proposal under implementations/<buildId>/.",
+    promptGuidelines: [
+      "Use the builder for implementation after a Conject research proposal is approved or the user requests implementation.",
+      "Do not implement researched proposals directly in the main session; delegate to the builder."
+    ],
+    parameters: BuilderParams,
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const input = params as SpawnBuilderParams;
+      const maxOutputChars = boundOutput(input.maxOutputChars);
+      const proposalPath = input.proposalPath?.trim() || "research/proposal.md";
+      const proposal = await readProjectFile(ctx.cwd, proposalPath);
+      const review = await readOptionalProjectFile(ctx.cwd, "research/review.md");
+      const requestedBuildId = input.buildId?.trim() || defaultBuildIdFromProposal(proposal);
+      const implementationRoot = input.implementationRoot?.trim() || "implementations";
+      const buildId = input.buildId?.trim()
+        ? safeFileSegment(requestedBuildId)
+        : chooseBuildId(ctx.cwd, requestedBuildId, implementationRoot);
+      const buildPath = getBuildPath(ctx.cwd, buildId, implementationRoot);
+      await mkdir(buildPath, { recursive: true });
+
+      const prompt = loadSubagentPrompt("builder");
+      const task = [
+        `# Build Task: ${buildId}`,
+        "",
+        `Target project root: ${ctx.cwd}`,
+        `Implementation directory: ${relative(ctx.cwd, buildPath)}`,
+        `Approved proposal: ${proposalPath}`,
+        "",
+        "## Builder Contract",
+        "- You are running with cwd set to the implementation directory.",
+        "- Write implementation files only under this implementation directory.",
+        "- You may inspect the target project root, but do not edit it directly.",
+        `- Before finishing, write ${BUILD_MANIFEST_NAME} in the implementation directory.`,
+        "- The manifest must list files that can later be merged into the target root.",
+        "- If you create Python files or Python project metadata, create and use .venv in the implementation directory.",
+        "- Run validation from the implementation directory and record commands in the manifest.",
+        "",
+        "## Approved Proposal",
+        proposal,
+        "",
+        "## Review Context",
+        review || "(no review artifact found)",
+        "",
+        "## Additional Context",
+        input.context?.trim() || "(none provided)",
+        "",
+        "## Required Final Report Format",
+        "## Summary",
+        "In this section, explain what the implementation does, how to run it from the implementation directory, and the main validation command/result.",
+        "## Files",
+        "## Validation",
+        "## Manifest",
+        "## Open Questions"
+      ].join("\n");
+
+      const emit = makeSubagentUpdateEmitter(onUpdate, {
+        role: "builder",
+        title: `Build ${buildId}`,
+        taskId: buildId
+      });
+      try {
+        emit(createInitialTrace(task), "running", { implementationPath: relative(ctx.cwd, buildPath) });
+
+        const result = await childRunner({
+          cwd: buildPath,
+          systemPrompt: prompt.prompt,
+          task,
+          tools: prompt.tools,
+          signal,
+          onUpdate: (trace) => emit(trace, "running", { implementationPath: relative(ctx.cwd, buildPath) })
+        });
+        const trace = normalizeTrace(result, task);
+        const output = truncateText(getChildOutput(result, trace), maxOutputChars);
+        await assertChildSuccess(ctx.cwd, buildId, "builder", result, output, trace);
+        const validationErrors = await validateBuilderWorkspace(ctx.cwd, buildId, implementationRoot);
+        if (validationErrors.length > 0) {
+          const artifact = await writeChildErrorArtifact(ctx.cwd, buildId, "builder", result, output, validationErrors, trace);
+          throw new Error(`Builder output failed validation. Diagnostics written to ${artifact.path}: ${validationErrors.join("; ")}`);
+        }
+
+        const manifestPath = relative(ctx.cwd, join(buildPath, BUILD_MANIFEST_NAME));
+        const report = [
+          output,
+          "",
+          "## Conject Build Metadata",
+          "",
+          `- Build id: ${buildId}`,
+          `- Implementation: ${relative(ctx.cwd, buildPath)}`,
+          `- Manifest: ${manifestPath}`
+        ].join("\n").trim();
+        const artifact = await writeResearchArtifact(ctx.cwd, `research/builds/${buildId}.md`, report);
+        const summary = summarizeMarkdown(report, ["Summary", "Validation"]);
+        const details: SpawnDetails = {
+          role: "builder",
+          status: "done",
+          title: `Build ${buildId}`,
+          taskId: buildId,
+          implementationPath: relative(ctx.cwd, buildPath),
+          manifestPath,
+          artifactPath: artifact.path,
+          exitCode: result.exitCode,
+          stderr: result.stderr,
+          outputChars: report.length,
+          summary,
+          trace: { ...trace, finalOutput: report }
+        };
+        return textResult(formatSubagentSuccessText(details), details);
+      } finally {
+        emit.cancelPending();
+      }
+    },
+    renderCall(args, theme) {
+      const input = args as SpawnBuilderParams;
+      const title = input.buildId || input.proposalPath || "approved proposal";
+      return new Text(`${theme.fg("toolTitle", theme.bold("builder"))} ${theme.fg("accent", title)}`, 0, 0);
     },
     renderResult: renderSubagentResult
   };
@@ -469,24 +633,90 @@ function makeSubagentUpdateEmitter(
   onUpdate: ((partial: AgentToolResult<SpawnDetails>) => void) | undefined,
   base: Pick<SpawnDetails, "role" | "title" | "taskId">
 ) {
-  return (trace: ChildRunTrace, status: SpawnDetails["status"], extra: Partial<SpawnDetails> = {}) => {
+  let emittedInitial = false;
+  let emittedActivity = false;
+  let lastEmitAt = 0;
+  let pending: { trace: ChildRunTrace; status: SpawnDetails["status"]; extra: Partial<SpawnDetails> } | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const clearPending = () => {
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+    pending = undefined;
+  };
+
+  const emitNow = (trace: ChildRunTrace, status: SpawnDetails["status"], extra: Partial<SpawnDetails>) => {
+    const traceSnapshot = cloneTrace(trace);
+    if (hasChildActivity(traceSnapshot)) emittedActivity = true;
+    lastEmitAt = Date.now();
     onUpdate?.(
-      textResult(formatSubagentProgressText(base.role, trace), {
+      textResult(formatSubagentProgressText(base.role, traceSnapshot), {
         ...base,
         status,
         stderr: "",
-        outputChars: trace.finalOutput.length,
-        trace,
+        outputChars: traceSnapshot.finalOutput.length,
+        trace: traceSnapshot,
         ...extra
       })
     );
   };
+
+  const schedulePending = () => {
+    if (timer || !pending) return;
+    const elapsed = Date.now() - lastEmitAt;
+    const delay = Math.max(0, SUBAGENT_UPDATE_INTERVAL_MS - elapsed);
+    timer = setTimeout(() => {
+      timer = undefined;
+      const next = pending;
+      pending = undefined;
+      if (next) emitNow(next.trace, next.status, next.extra);
+    }, delay);
+  };
+
+  const emit = (trace: ChildRunTrace, status: SpawnDetails["status"], extra: Partial<SpawnDetails> = {}) => {
+    if (!onUpdate) return;
+    const traceSnapshot = cloneTrace(trace);
+    const extraSnapshot = { ...extra };
+    const activity = hasChildActivity(traceSnapshot);
+    if (status !== "running") {
+      clearPending();
+      emitNow(traceSnapshot, status, extraSnapshot);
+      return;
+    }
+    if (!emittedInitial || (!emittedActivity && activity)) {
+      emitNow(traceSnapshot, status, extraSnapshot);
+      emittedInitial = true;
+      return;
+    }
+    pending = { trace: traceSnapshot, status, extra: extraSnapshot };
+    schedulePending();
+  };
+
+  emit.cancelPending = clearPending;
+  return emit;
+}
+
+function hasChildActivity(trace: ChildRunTrace): boolean {
+  return trace.items.length > 0 || trace.finalOutput.trim().length > 0 || trace.malformedLines > 0;
+}
+
+function cloneTrace(trace: ChildRunTrace): ChildRunTrace {
+  return {
+    ...trace,
+    items: trace.items.map(cloneDisplayItem),
+    usage: { ...trace.usage }
+  };
+}
+
+function cloneDisplayItem(item: ChildDisplayItem): ChildDisplayItem {
+  if (item.type === "toolCall") return { ...item, args: { ...item.args } };
+  return { ...item };
 }
 
 async function assertChildSuccess(
   cwd: string,
   artifactId: string,
-  role: "researcher" | "reviewer",
+  role: SubagentRole,
   result: ChildRunResult,
   output: string,
   trace: ChildRunTrace
@@ -505,7 +735,7 @@ async function assertChildSuccess(
 async function writeChildErrorArtifact(
   cwd: string,
   artifactId: string,
-  role: "researcher" | "reviewer",
+  role: SubagentRole,
   result: ChildRunResult,
   output: string,
   reasons: string[],
@@ -536,6 +766,75 @@ async function writeChildErrorArtifact(
       "```"
     ].join("\n")
   );
+}
+
+async function readProjectFile(cwd: string, requestedPath: string): Promise<string> {
+  const path = resolveProjectPath(cwd, requestedPath);
+  return readFile(path, "utf8");
+}
+
+async function readOptionalProjectFile(cwd: string, requestedPath: string): Promise<string | undefined> {
+  const path = resolveProjectPath(cwd, requestedPath);
+  if (!existsSync(path)) return undefined;
+  return readFile(path, "utf8");
+}
+
+function resolveProjectPath(cwd: string, requestedPath: string): string {
+  const normalized = requestedPath.replace(/\\/g, "/").replace(/^\/+/, "").trim();
+  if (!normalized) throw new Error("Project path is required.");
+  if (isAbsolute(requestedPath)) throw new Error("Project path must be relative.");
+  if (normalized.split("/").some((part) => part === "..")) throw new Error("Project path must not contain '..'.");
+  const resolved = resolve(cwd, normalized);
+  const root = resolve(cwd);
+  if (resolved !== root && !resolved.startsWith(`${root}${sep}`)) throw new Error("Project path must stay inside the project.");
+  return resolved;
+}
+
+async function validateBuilderWorkspace(cwd: string, buildId: string, implementationRoot: string): Promise<string[]> {
+  const errors: string[] = [];
+  const buildPath = getBuildPath(cwd, buildId, implementationRoot);
+  const manifestPath = join(buildPath, BUILD_MANIFEST_NAME);
+  if (!existsSync(manifestPath)) {
+    errors.push(`missing ${BUILD_MANIFEST_NAME}`);
+  } else {
+    try {
+      await applyBuildManifest(cwd, buildId, { dryRun: true, implementationRoot });
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  if (workspaceNeedsPythonVenv(buildPath) && !hasPythonVenv(buildPath)) {
+    errors.push("Python implementation output requires .venv in the implementation directory");
+  }
+  return errors;
+}
+
+function workspaceNeedsPythonVenv(root: string): boolean {
+  for (const path of walkWorkspaceFiles(root)) {
+    const relativePath = relative(root, path).replace(/\\/g, "/");
+    if (relativePath.endsWith(".py")) return true;
+    if (["pyproject.toml", "requirements.txt", "requirements-dev.txt", "setup.py"].includes(relativePath)) return true;
+  }
+  return false;
+}
+
+function hasPythonVenv(root: string): boolean {
+  return existsSync(join(root, ".venv", "bin", "python")) || existsSync(join(root, ".venv", "Scripts", "python.exe"));
+}
+
+function walkWorkspaceFiles(root: string): string[] {
+  const files: string[] = [];
+  const visit = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if ([".venv", "__pycache__", "node_modules", ".git"].includes(entry.name)) continue;
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile()) files.push(path);
+    }
+  };
+  if (existsSync(root) && statSync(root).isDirectory()) visit(root);
+  return files;
 }
 
 function renderSubagentResult(
@@ -609,7 +908,7 @@ function formatSubagentSuccessText(details: SpawnDetails): string {
   ].join("\n");
 }
 
-function formatSubagentProgressText(role: "researcher" | "reviewer", trace: ChildRunTrace): string {
+function formatSubagentProgressText(role: SubagentRole, trace: ChildRunTrace): string {
   const toolCalls = trace.items.filter((item) => item.type === "toolCall").length;
   return `${capitalize(role)} running: ${toolCalls} child tool call${toolCalls === 1 ? "" : "s"} observed.`;
 }

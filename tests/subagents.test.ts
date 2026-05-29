@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import {
   applyJsonEventToTrace,
   buildChildConjectArgs,
+  type ChildRunner,
+  type ChildRunTrace,
   createInitialTrace,
+  createSpawnBuilderTool,
   createSpawnResearcherTool,
   summarizeMarkdown,
   validateReviewerOutput,
@@ -11,6 +17,10 @@ import {
 } from "../src/tools/subagents.js";
 
 describe("subagent runtime helpers", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("builds child args without loading a duplicate extension", () => {
     const args = buildChildConjectArgs({
       systemPrompt: "child prompt",
@@ -111,6 +121,159 @@ describe("subagent runtime helpers", () => {
     expect(expanded).toContain("Final Output");
   });
 
+  it("throttles rapid running subagent updates but keeps expanded snapshots current", async () => {
+    vi.useFakeTimers();
+    const dir = mkdtempSync(join(tmpdir(), "conject-subagent-throttle-"));
+    try {
+      const updates: SpawnDetails[] = [];
+      let task = "";
+      const childRunner: ChildRunner = async (input) => {
+        task = input.task;
+        input.onUpdate?.(traceWithRead(input.task, "first.md"));
+        input.onUpdate?.(traceWithRead(input.task, "second.md"));
+        input.onUpdate?.(traceWithRead(input.task, "third.md"));
+        await new Promise((resolve) => setTimeout(resolve, 2_100));
+        const trace = traceWithRead(input.task, "third.md");
+        trace.finalOutput = "## Summary\n\nDone.";
+        return { stdout: trace.finalOutput, stderr: "", exitCode: 0, trace };
+      };
+      const tool = createSpawnResearcherTool(childRunner);
+      const promise = tool.execute(
+        "tool-1",
+        { taskId: "topic", title: "Topic", question: "Question?" },
+        undefined,
+        (partial) => updates.push(partial.details as SpawnDetails),
+        fakeContext(dir)
+      );
+
+      expect(updates).toHaveLength(2);
+      expect(updates[0]?.trace.items).toHaveLength(0);
+      expect(renderExpanded(tool, updates[1])).toContain("first.md");
+
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(updates).toHaveLength(2);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(updates).toHaveLength(3);
+      expect(renderExpanded(tool, updates[2])).toContain("third.md");
+
+      await vi.advanceTimersByTimeAsync(100);
+      await promise;
+      expect(task).toContain("Question?");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("includes method details and concrete examples in researcher task instructions", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "conject-researcher-contract-"));
+    try {
+      let task = "";
+      const childRunner: ChildRunner = async (input) => {
+        task = input.task;
+        return {
+          stdout: [
+            "## Summary",
+            "Done.",
+            "",
+            "## Method Details and Concrete Examples",
+            "Example.",
+          ].join("\n"),
+          stderr: "",
+          exitCode: 0
+        };
+      };
+      const tool = createSpawnResearcherTool(childRunner);
+      await tool.execute(
+        "tool-1",
+        { taskId: "topic", title: "Topic", question: "Question?" },
+        undefined,
+        undefined,
+        fakeContext(dir)
+      );
+
+      expect(task).toContain("Method details and concrete examples");
+      expect(task).toContain("concrete inputs and outputs");
+      expect(task).toContain("at least one worked example");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("includes what-it-does and how-to-run requirements in builder task instructions", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "conject-builder-contract-"));
+    try {
+      mkdirSync(join(dir, "research"), { recursive: true });
+      writeFileSync(join(dir, "research", "proposal.md"), "# Demo Build\n\nImplement a demo.", "utf8");
+      let task = "";
+      const childRunner: ChildRunner = async (input) => {
+        task = input.task;
+        writeFileSync(
+          join(input.cwd, "BUILD_MANIFEST.json"),
+          JSON.stringify({ buildId: "demo-build", files: [] }),
+          "utf8"
+        );
+        return {
+          stdout: [
+            "## Summary",
+            "Builds a demo. Run it with npm test. Validation: not applicable.",
+            "",
+            "## Files",
+            "",
+            "## Validation",
+            "",
+            "## Manifest",
+            "",
+            "## Open Questions"
+          ].join("\n"),
+          stderr: "",
+          exitCode: 0
+        };
+      };
+      const tool = createSpawnBuilderTool(childRunner);
+      await tool.execute(
+        "tool-1",
+        { proposalPath: "research/proposal.md", buildId: "demo-build" },
+        undefined,
+        undefined,
+        fakeContext(dir)
+      );
+
+      expect(task).toContain("explain what the implementation does");
+      expect(task).toContain("how to run it from the implementation directory");
+      expect(task).toContain("main validation command/result");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("cancels pending throttled subagent updates after completion", async () => {
+    vi.useFakeTimers();
+    const dir = mkdtempSync(join(tmpdir(), "conject-subagent-throttle-"));
+    try {
+      const updates: SpawnDetails[] = [];
+      const childRunner: ChildRunner = async (input) => {
+        input.onUpdate?.(traceWithRead(input.task, "first.md"));
+        input.onUpdate?.(traceWithRead(input.task, "second.md"));
+        return { stdout: "## Summary\n\nDone.", stderr: "", exitCode: 0 };
+      };
+      const tool = createSpawnResearcherTool(childRunner);
+      await tool.execute(
+        "tool-1",
+        { taskId: "topic", title: "Topic", question: "Question?" },
+        undefined,
+        (partial) => updates.push(partial.details as SpawnDetails),
+        fakeContext(dir)
+      );
+
+      expect(updates).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(updates).toHaveLength(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("validates reviewer structure", () => {
     const valid = [
       "## Verdict",
@@ -154,4 +317,25 @@ function fakeTheme() {
     fg: (_color: string, text: string) => text,
     bold: (text: string) => text
   };
+}
+
+function fakeContext(cwd: string) {
+  return {
+    cwd,
+    hasUI: false,
+    ui: {}
+  } as any;
+}
+
+function traceWithRead(task: string, path: string): ChildRunTrace {
+  const trace = createInitialTrace(task);
+  trace.items.push({ type: "toolCall", name: "read", args: { path } });
+  return trace;
+}
+
+function renderExpanded(tool: ReturnType<typeof createSpawnResearcherTool>, details: SpawnDetails | undefined): string {
+  return tool
+    .renderResult?.({ content: [{ type: "text", text: "running" }], details } as any, { expanded: true, isPartial: true }, fakeTheme(), {} as any)
+    .render(120)
+    .join("\n") ?? "";
 }

@@ -92,7 +92,7 @@ export function createPresentProposalTool(): ToolDefinition {
     promptGuidelines: [
       "Use conject_present_proposal for the final implementation proposal.",
       "Pass a concise summary that synthesizes research/review.md and the proposal.",
-      "The full proposal is written to research/proposal.md; invite the user to reply `build this` or request revisions."
+      "The full proposal is written to research/proposal.md; invite the user to request implementation or revisions."
     ],
     parameters: Type.Object({
       summary: Type.String({ description: "Concise chat summary of the review and implementation proposal." }),
@@ -110,7 +110,7 @@ export function createPresentProposalTool(): ToolDefinition {
           "",
           summary,
           "",
-          "Reply `build this` to start implementation, or describe revisions."
+          "Reply with an implementation request to start the builder, or describe revisions."
         ].join("\n"),
         proposalDetails
       );
@@ -135,7 +135,7 @@ function renderProposalResult(result: AgentToolResult<unknown>, options: { expan
       [
         `${marker} ${theme.fg("accent", details.path)}`,
         theme.fg("toolOutput", details.summary),
-        theme.fg("muted", "Reply `build this` to start implementation, or describe revisions."),
+        theme.fg("muted", "Reply with an implementation request to start the builder, or describe revisions."),
         theme.fg("muted", "(Ctrl+O to expand)")
       ].join("\n"),
       0,
@@ -152,6 +152,6 @@ function renderProposalResult(result: AgentToolResult<unknown>, options: { expan
   container.addChild(new Text(theme.fg("muted", "--- Full Proposal ---"), 0, 0));
   container.addChild(new Markdown(details.content, 0, 0, getMarkdownTheme()));
   container.addChild(new Spacer(1));
-  container.addChild(new Text(theme.fg("muted", "Reply `build this` to start implementation, or describe revisions."), 0, 0));
+  container.addChild(new Text(theme.fg("muted", "Reply with an implementation request to start the builder, or describe revisions."), 0, 0));
   return container;
 }

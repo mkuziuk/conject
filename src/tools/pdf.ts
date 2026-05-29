@@ -15,6 +15,8 @@ export interface PdfExtractDetails {
   source: string;
   bytes: number;
   chars: number;
+  originalChars: number;
+  returnedChars: number;
   method: "text" | "pdftotext" | "strings-fallback";
   truncated: boolean;
 }
@@ -59,6 +61,8 @@ export function createPdfExtractTool(fetchImpl: typeof fetch = fetch): ToolDefin
           source: input.url ?? input.path ?? "",
           bytes: 0,
           chars: 0,
+          originalChars: 0,
+          returnedChars: 0,
           method: "strings-fallback",
           truncated: false
         } satisfies PdfExtractDetails);
@@ -98,47 +102,66 @@ async function extractText(
   signal: AbortSignal | undefined
 ): Promise<{ text: string; details: PdfExtractDetails }> {
   if (!looksLikePdf(data)) {
-    const text = truncateText(data.toString("utf8"), maxChars);
+    const sourceText = data.toString("utf8");
+    const formatted = formatExtractedText(sourceText, maxChars);
     return {
-      text,
+      text: formatted.text,
       details: {
         source,
         bytes: data.length,
-        chars: text.length,
+        chars: formatted.returnedChars,
+        originalChars: formatted.originalChars,
+        returnedChars: formatted.returnedChars,
         method: "text",
-        truncated: text.length < data.toString("utf8").length
+        truncated: formatted.truncated
       }
     };
   }
 
   const pdftotext = await tryPdftotext(data, signal);
   if (pdftotext !== undefined) {
-    const text = truncateText(pdftotext.trim(), maxChars);
+    const formatted = formatExtractedText(pdftotext.trim(), maxChars);
     return {
-      text,
+      text: formatted.text,
       details: {
         source,
         bytes: data.length,
-        chars: text.length,
+        chars: formatted.returnedChars,
+        originalChars: formatted.originalChars,
+        returnedChars: formatted.returnedChars,
         method: "pdftotext",
-        truncated: text.length < pdftotext.length
+        truncated: formatted.truncated
       }
     };
   }
 
   const fallback = extractPrintableStrings(data);
-  const text = truncateText(fallback, maxChars);
+  const formatted = formatExtractedText(fallback, maxChars);
+  const text =
+    formatted.text.trim() ||
+    "No readable text could be extracted. Install the pdftotext command for better PDF extraction.";
   return {
-    text:
-      text.trim() ||
-      "No readable text could be extracted. Install the pdftotext command for better PDF extraction.",
+    text,
     details: {
       source,
       bytes: data.length,
       chars: text.length,
+      originalChars: formatted.originalChars,
+      returnedChars: text.length,
       method: "strings-fallback",
-      truncated: text.length < fallback.length
+      truncated: formatted.truncated
     }
+  };
+}
+
+function formatExtractedText(text: string, maxChars: number): { text: string; originalChars: number; returnedChars: number; truncated: boolean } {
+  const truncated = text.length > maxChars;
+  const returned = truncateText(text, maxChars);
+  return {
+    text: returned,
+    originalChars: text.length,
+    returnedChars: returned.length,
+    truncated
   };
 }
 

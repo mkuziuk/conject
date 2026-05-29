@@ -16,6 +16,7 @@ Run the visible end-to-end research workflow.
 7. Use `conject_present_proposal` for the final implementation proposal only after reviewing the ranking and critique. Pass both:
    - `summary`: concise synthesis of `research/review.md` and `research/proposal.md`;
    - `content`: the full Markdown proposal.
-8. In the final chat answer, summarize the review verdict, recommended implementation, main risks, and artifact paths.
+8. If the user's original request includes explicit implementation intent, call `conject_spawn_builder` after the proposal is written. Do not implement directly in the main session.
+9. In the final chat answer, summarize the review verdict, recommended implementation, main risks, and artifact paths. If a builder ran, include the implementation folder and build report path.
 
 Do not use hidden runs, IDs, databases, or private workflow state. The workflow state is the visible Markdown under `research/`.

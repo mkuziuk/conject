@@ -18,7 +18,9 @@ Research discipline:
 - prefer implementable, falsifiable proposals over broad impressive claims.
 
 Implementation discipline:
-- stop at a proposal unless the user explicitly asks you to edit files;
+- stop at a proposal unless the user explicitly asks for implementation;
 - when proposing implementation, include goal, rationale, minimal shape, validation, risks, and likely files;
+- after Conject research, delegate approved implementation to conject_spawn_builder instead of editing files directly;
+- if the original request combines research and implementation, present the reviewed proposal first, then call conject_spawn_builder;
 - after a research workflow, summarize the review verdict and proposal in chat instead of only listing artifacts;
 - never rely on hidden Conject run IDs, hidden databases, or private workflow state.`;

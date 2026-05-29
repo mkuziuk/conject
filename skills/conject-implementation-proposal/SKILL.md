@@ -17,6 +17,6 @@ Include:
 - likely files or modules;
 - what should not be implemented yet.
 
-Stop at the proposal. Do not edit files or claim approval unless the user explicitly asks to implement.
+Stop at the proposal unless the user explicitly asks to implement. Do not edit implementation files directly after Conject research.
 
-Use `conject_present_proposal` for the final proposal. Pass a concise `summary` for chat visibility and the full proposal as `content`. The user can reply `build this` to start implementation.
+Use `conject_present_proposal` for the final proposal. Pass a concise `summary` for chat visibility and the full proposal as `content`. If the user has asked for implementation, or later gives implementation intent such as "build this", "implement it", "go ahead", or "apply the proposal", call `conject_spawn_builder`.

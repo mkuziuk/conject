@@ -1,8 +1,11 @@
 import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { errorResult, textResult } from "./result.js";
+import { errorResult, textResult, truncateText } from "./result.js";
 
 const MAX_RESULTS = 10;
+const DEFAULT_SEARCH_MAX_CHARS = 30_000;
+const MAX_SEARCH_MAX_CHARS = 120_000;
+const MAX_RESULT_TEXT_CHARS = 4_000;
 
 export interface PaperSearchResult {
   title: string;
@@ -23,11 +26,17 @@ export interface WebSearchResult {
 interface SearchParams {
   query: string;
   limit?: number;
+  maxChars?: number;
 }
 
 function boundLimit(limit: number | undefined, fallback: number): number {
   const value = Number.isFinite(limit) ? Math.floor(limit as number) : fallback;
   return Math.max(1, Math.min(MAX_RESULTS, value));
+}
+
+function boundMaxChars(maxChars: number | undefined): number {
+  const value = Number.isFinite(maxChars) ? Math.floor(maxChars as number) : DEFAULT_SEARCH_MAX_CHARS;
+  return Math.max(1_000, Math.min(MAX_SEARCH_MAX_CHARS, value));
 }
 
 export function createPaperSearchTool(fetchImpl: typeof fetch = fetch): ToolDefinition {
@@ -39,20 +48,23 @@ export function createPaperSearchTool(fetchImpl: typeof fetch = fetch): ToolDefi
     promptGuidelines: ["Use paper search before broad web search when research claims need scholarly evidence."],
     parameters: Type.Object({
       query: Type.String({ description: "Search query." }),
-      limit: Type.Optional(Type.Number({ description: "Maximum results, 1-10. Default 5." }))
+      limit: Type.Optional(Type.Number({ description: "Maximum results, 1-10. Default 5." })),
+      maxChars: Type.Optional(Type.Number({ description: "Maximum returned text characters. Default 30000." }))
     }),
     async execute(_toolCallId, params, signal) {
       const input = params as SearchParams;
+      const maxChars = boundMaxChars(input.maxChars);
       try {
         const limit = boundLimit(input.limit, 5);
-        const results = await searchOpenAlex(fetchImpl, input.query, limit, signal);
-        const text = results.length
+        const results = boundPaperResults(await searchOpenAlex(fetchImpl, input.query, limit, signal));
+        const rawText = results.length
           ? results.map(formatPaperResult).join("\n\n")
           : `No paper results found for "${input.query}".`;
-        return textResult(text, { provider: "openalex", query: input.query, results });
+        const output = boundToolText(rawText, maxChars);
+        return textResult(output.text, { provider: "openalex", query: input.query, maxChars, truncated: output.truncated, results });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        return errorResult(`Paper search failed: ${message}`, { provider: "openalex", query: input.query, results: [] });
+        return errorResult(`Paper search failed: ${message}`, { provider: "openalex", query: input.query, maxChars, truncated: false, results: [] });
       }
     }
   };
@@ -70,35 +82,61 @@ export function createWebSearchTool(fetchImpl: typeof fetch = fetch): ToolDefini
     ],
     parameters: Type.Object({
       query: Type.String({ description: "Search query." }),
-      limit: Type.Optional(Type.Number({ description: "Maximum results, 1-10. Default 5." }))
+      limit: Type.Optional(Type.Number({ description: "Maximum results, 1-10. Default 5." })),
+      maxChars: Type.Optional(Type.Number({ description: "Maximum returned text characters. Default 30000." }))
     }),
     async execute(_toolCallId, params, signal) {
       const input = params as SearchParams;
       const limit = boundLimit(input.limit, 5);
+      const maxChars = boundMaxChars(input.maxChars);
       try {
         const tavilyKey = process.env.TAVILY_API_KEY;
         const searxngBase = process.env.SEARXNG_BASE_URL ?? process.env.CONJECT_SEARXNG_URL;
         const provider = tavilyKey ? "tavily" : searxngBase ? "searxng" : "none";
-        const results = tavilyKey
-          ? await searchTavily(fetchImpl, tavilyKey, input.query, limit, signal)
-          : searxngBase
-            ? await searchSearxng(fetchImpl, searxngBase, input.query, limit, signal)
-            : [];
+        const results = boundWebResults(
+          tavilyKey
+            ? await searchTavily(fetchImpl, tavilyKey, input.query, limit, signal)
+            : searxngBase
+              ? await searchSearxng(fetchImpl, searxngBase, input.query, limit, signal)
+              : []
+        );
 
         if (provider === "none") {
           return textResult(
             "No web search provider is configured. Set TAVILY_API_KEY, SEARXNG_BASE_URL, or CONJECT_SEARXNG_URL.",
-            { provider, query: input.query, results }
+            { provider, query: input.query, maxChars, truncated: false, results }
           );
         }
 
-        const text = results.length ? results.map(formatWebResult).join("\n\n") : `No web results found for "${input.query}".`;
-        return textResult(text, { provider, query: input.query, results });
+        const rawText = results.length ? results.map(formatWebResult).join("\n\n") : `No web results found for "${input.query}".`;
+        const output = boundToolText(rawText, maxChars);
+        return textResult(output.text, { provider, query: input.query, maxChars, truncated: output.truncated, results });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        return errorResult(`Web search failed: ${message}`, { provider: "unknown", query: input.query, results: [] });
+        return errorResult(`Web search failed: ${message}`, { provider: "unknown", query: input.query, maxChars, truncated: false, results: [] });
       }
     }
+  };
+}
+
+function boundPaperResults(results: PaperSearchResult[]): PaperSearchResult[] {
+  return results.map((result) => ({
+    ...result,
+    abstract: result.abstract ? truncateText(result.abstract, MAX_RESULT_TEXT_CHARS) : undefined
+  }));
+}
+
+function boundWebResults(results: WebSearchResult[]): WebSearchResult[] {
+  return results.map((result) => ({
+    ...result,
+    snippet: result.snippet ? truncateText(result.snippet, MAX_RESULT_TEXT_CHARS) : undefined
+  }));
+}
+
+function boundToolText(text: string, maxChars: number): { text: string; truncated: boolean } {
+  return {
+    text: truncateText(text, maxChars),
+    truncated: text.length > maxChars
   };
 }
 

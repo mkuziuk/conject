@@ -4,6 +4,7 @@ import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import { inspectCredentialStore, resolveWebSearchStatus } from "./credentials.js";
 import { resolveConjectEnvironment } from "./env.js";
 import { getConjectExtensionPath, getConjectSkillsPath, getPackageRoot } from "./paths.js";
+import { inspectModelAuthStore } from "./setup.js";
 
 export interface DoctorInfo {
   packageName: string;
@@ -17,6 +18,8 @@ export interface DoctorInfo {
   credentialPath: string;
   credentialsExist: boolean;
   credentialPermissionsOk: boolean;
+  modelAuthPath: string;
+  modelAuthProviders: string[];
   skills: string[];
   tools: string[];
   webSearch: "tavily" | "searxng" | "none";
@@ -25,6 +28,7 @@ export interface DoctorInfo {
 export function getDoctorInfo(cwd = process.cwd(), env: NodeJS.ProcessEnv = process.env, home?: string): DoctorInfo {
   const configured = resolveConjectEnvironment({ cwd, env, home });
   const credentials = inspectCredentialStore({ home });
+  const modelAuth = inspectModelAuthStore(home);
   const pkg = JSON.parse(readFileSync(join(getPackageRoot(), "package.json"), "utf8")) as {
     name?: string;
     version?: string;
@@ -42,6 +46,8 @@ export function getDoctorInfo(cwd = process.cwd(), env: NodeJS.ProcessEnv = proc
     credentialPath: credentials.path,
     credentialsExist: credentials.exists,
     credentialPermissionsOk: credentials.permissionsOk,
+    modelAuthPath: modelAuth.path,
+    modelAuthProviders: modelAuth.providers.map((provider) => `${provider.provider} (${provider.type})`),
     skills: listSkillNames(getConjectSkillsPath()),
     tools: [
       "conject_paper_search",
@@ -50,7 +56,8 @@ export function getDoctorInfo(cwd = process.cwd(), env: NodeJS.ProcessEnv = proc
       "conject_write_artifact",
       "conject_present_proposal",
       "conject_spawn_researcher",
-      "conject_spawn_reviewer"
+      "conject_spawn_reviewer",
+      "conject_spawn_builder"
     ],
     webSearch: resolveWebSearchStatus(env)
   };
@@ -68,7 +75,10 @@ export function formatDoctorInfo(info: DoctorInfo): string {
     `Credentials: ${info.credentialPath}`,
     `Credentials exist: ${info.credentialsExist ? "yes" : "no"}`,
     `Credential permissions: ${info.credentialPermissionsOk ? "ok" : "check"}`,
+    `Model auth: ${info.modelAuthPath}`,
+    `Model providers: ${info.modelAuthProviders.length ? info.modelAuthProviders.join(", ") : "none"}`,
     `Web search: ${info.webSearch}`,
+    `Setup: run conject setup for guided provider and tool credential setup`,
     "",
     "Loaded Conject skills:",
     ...info.skills.map((skill) => `- ${skill}`),

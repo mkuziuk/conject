@@ -48,6 +48,7 @@ macOS, Linux, or WSL:
 
 ```bash
 cd ~/Projects/<target-project>
+conject setup
 conject --doctor
 conject
 ```
@@ -56,6 +57,7 @@ Windows PowerShell:
 
 ```powershell
 Set-Location "$HOME\Projects\<target-project>"
+conject setup
 conject --doctor
 conject
 ```
@@ -87,6 +89,7 @@ Generated state and outputs:
 - Conject credentials: `~/.conject/credentials.env`
 - target project sessions: `<target-project>/.conject/sessions`
 - target project research artifacts: `<target-project>/research/`
+- isolated implementation builds: `<target-project>/implementations/<build-id>/`
 
 On Windows, `~` means your user profile directory; PowerShell will show equivalent paths with backslashes.
 
@@ -109,7 +112,8 @@ Conject should:
 5. call a reviewer subagent;
 6. write `research/review.md`;
 7. write `research/proposal.md`;
-8. show a concise summary of the review and proposal plus artifact paths in chat.
+8. if the user has asked for implementation, call the builder subagent and write isolated output under `implementations/<build-id>/`;
+9. show a concise summary of the review, proposal, build status, and artifact paths in chat.
 
 There are no Conject run IDs, hidden SQLite databases, or workflow widgets. The visible Markdown files are the state.
 
@@ -124,6 +128,7 @@ The extension registers:
 - `conject_present_proposal`
 - `conject_spawn_researcher`
 - `conject_spawn_reviewer`
+- `conject_spawn_builder`
 
 Web search is optional. Configure it with one of:
 
@@ -133,15 +138,20 @@ Web search is optional. Configure it with one of:
 
 OpenAlex paper search works without a key. Set `OPENALEX_MAILTO` if you want polite-pool OpenAlex requests.
 
+Tool output is bounded by default: PDF extraction returns up to 80,000 extracted characters unless `maxChars` is set, paper/web search return up to 30,000 formatted characters unless `maxChars` is set, and search result counts clamp to 1-10.
+
 Conject loads these values from the process environment first, then from `~/.conject/credentials.env`. The process environment wins if both are set. Do not put API keys directly in `~/.zshrc`; use the private credential file instead:
 
 ```bash
+conject setup
 conject credentials init
 printf '%s\n' '<your-tavily-key>' | conject credentials set TAVILY_API_KEY --stdin
 conject credentials status
 ```
 
 The credential file is created with `0600` permissions and Conject never prints secret values in status or doctor output.
+
+`conject setup` also guides model provider authentication using the same provider groups as Pi `/login`. Model credentials are stored in Conject's isolated Pi auth file at `~/.conject/agent/auth.json`; normal Pi credentials under `~/.pi/agent/auth.json` are not modified.
 
 ## Skills
 
@@ -164,7 +174,16 @@ Subagent prompts live under `subagents/`:
 - `reviewer.md`
 - `builder.md`
 
-The researcher and reviewer tools read these prompts. After a proposal is shown, reply `build this` to hand the approved proposal to the builder prompt in the normal Pi session.
+The researcher, reviewer, and builder tools read these prompts. After a proposal is shown, any clear implementation request such as `build this`, `implement it`, or `go ahead` routes through the builder subagent.
+
+Builder output is isolated:
+
+- implementation files go under `implementations/<build-id>/`;
+- Python implementations must create and use `implementations/<build-id>/.venv`;
+- the builder writes `implementations/<build-id>/BUILD_MANIFEST.json`;
+- the builder writes a report under `research/builds/<build-id>.md`.
+
+Use `/conject-apply-build <build-id>` to dry-run a merge from the manifest. Use `/conject-apply-build <build-id> --yes` to copy only manifest-listed safe files into the project root.
 
 Subagent rows stream child progress in the TUI. Collapsed rows show status plus the last child tool calls; press Ctrl+O to expand Pi tool output and inspect full child transcripts.
 

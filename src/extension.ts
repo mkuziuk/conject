@@ -1,11 +1,13 @@
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { createBuildHandoffMessage, hasResearchProposal, isBuildThisRequest } from "./build-handoff.js";
+import { applyBuildManifest, formatApplyBuildResult } from "./builds.js";
+import { createBuilderToolRequestMessage, hasResearchProposal, isImplementationIntentRequest } from "./build-handoff.js";
 import { formatDoctorInfo, getDoctorInfo } from "./doctor.js";
 import { createPresentProposalTool, createWriteArtifactTool } from "./tools/artifacts.js";
 import { createPdfExtractTool } from "./tools/pdf.js";
 import { createPaperSearchTool, createWebSearchTool } from "./tools/search.js";
 import {
   type ChildRunner,
+  createSpawnBuilderTool,
   createSpawnResearcherTool,
   createSpawnReviewerTool
 } from "./tools/subagents.js";
@@ -64,6 +66,31 @@ export function createConjectExtensionFactory(options: ConjectExtensionOptions =
       }
     });
 
+    pi.registerCommand("conject-apply-build", {
+      description: "Dry-run or apply a Conject builder manifest into the project root.",
+      handler: async (args, ctx) => {
+        const parts = args.split(/\s+/).filter(Boolean);
+        const buildId = parts.find((part) => part !== "--yes");
+        if (!buildId) {
+          pi.sendMessage({
+            customType: "conject-apply-build",
+            content: "Usage: /conject-apply-build <buildId> [--yes]",
+            display: true,
+            details: { error: "missing-build-id" }
+          });
+          return;
+        }
+        const dryRun = !parts.includes("--yes");
+        const result = await applyBuildManifest(ctx.cwd, buildId, { dryRun });
+        pi.sendMessage({
+          customType: "conject-apply-build",
+          content: formatApplyBuildResult(result),
+          display: true,
+          details: result
+        });
+      }
+    });
+
     pi.registerTool(createPaperSearchTool(fetchImpl));
     pi.registerTool(createWebSearchTool(fetchImpl));
     pi.registerTool(createPdfExtractTool(fetchImpl));
@@ -71,12 +98,13 @@ export function createConjectExtensionFactory(options: ConjectExtensionOptions =
     pi.registerTool(createPresentProposalTool());
     pi.registerTool(createSpawnResearcherTool(options.childRunner));
     pi.registerTool(createSpawnReviewerTool(options.childRunner));
+    pi.registerTool(createSpawnBuilderTool(options.childRunner));
 
     pi.on("input", (event, ctx) => {
-      if (!isBuildThisRequest(event.text) || !hasResearchProposal(ctx.cwd)) return { action: "continue" };
+      if (!isImplementationIntentRequest(event.text) || !hasResearchProposal(ctx.cwd)) return { action: "continue" };
       return {
         action: "transform",
-        text: createBuildHandoffMessage(ctx.cwd),
+        text: createBuilderToolRequestMessage(ctx.cwd, event.text),
         images: event.images
       };
     });

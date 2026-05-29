@@ -35,6 +35,11 @@ describe("Conject launcher environment", () => {
     expect(buildConjectArgs(["install", "./pkg"])).toEqual(["install", "./pkg"]);
   });
 
+  it("does not inject prompt flags into Conject setup commands", () => {
+    expect(buildConjectArgs(["setup"])).toEqual(["setup"]);
+    expect(buildConjectArgs(["credentials", "status"])).toEqual(["credentials", "status"]);
+  });
+
   it("does not inject parent prompt flags into internal child runs", () => {
     expect(buildConjectArgs(["--system-prompt", "child"], { CONJECT_INTERNAL_CHILD: "1" })).toEqual([
       "--system-prompt",

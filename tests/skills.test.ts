@@ -44,4 +44,17 @@ describe("Conject subagent prompts", () => {
       expect(prompt.tools.length).toBeGreaterThan(0);
     }
   });
+
+  it("keeps researcher and builder report contracts explicit", () => {
+    const researcher = loadSubagentPrompt("researcher").prompt;
+    const builder = loadSubagentPrompt("builder").prompt;
+    const researchAgentSkill = readFileSync(join(getConjectSkillsPath(), "conject-research-agent", "SKILL.md"), "utf8");
+
+    expect(researcher).toContain("## Method Details and Concrete Examples");
+    expect(researcher).toContain("at least one worked example");
+    expect(researchAgentSkill).toContain("## Method Details and Concrete Examples");
+    expect(researchAgentSkill).toContain("concrete inputs, outputs, assumptions");
+    expect(builder).toContain("what the implementation does");
+    expect(builder).toContain("how to run it from the implementation directory");
+  });
 });

@@ -138,7 +138,9 @@ export function formatCredentialStoreStatus(status: CredentialStoreStatus, env: 
     `Effective web search: ${resolveWebSearchStatus(env)}`,
     "",
     "Configured keys:",
-    ...CREDENTIAL_KEYS.map((key) => `- ${key}: ${status.keys[key] ? "set" : "unset"}`)
+    ...CREDENTIAL_KEYS.map((key) => `- ${key}: ${status.keys[key] ? "set" : "unset"}`),
+    "",
+    "Run `conject setup` for guided model provider and tool credential setup."
   ].join("\n");
 }
 
