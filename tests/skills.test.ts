@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getConjectSkillsPath } from "../src/paths.js";
-import { loadSubagentPrompt } from "../src/subagent-prompts.js";
+import { loadSubagentPrompt, parseSubagentPromptContent } from "../src/subagent-prompts.js";
 
 const EXPECTED_SKILLS = [
   "conject-implementation-proposal",
@@ -43,6 +43,27 @@ describe("Conject subagent prompts", () => {
       expect(prompt.prompt.length).toBeGreaterThan(100);
       expect(prompt.tools.length).toBeGreaterThan(0);
     }
+  });
+
+  it("parses subagent prompts with CRLF and BOM-prefixed frontmatter", () => {
+    const prompt = parseSubagentPromptContent(
+      "researcher",
+      "C:\\Users\\example\\conject\\subagents\\researcher.md",
+      [
+        "\uFEFF---",
+        "name: researcher",
+        "description: Focused Windows prompt.",
+        "tools: read, grep, conject_paper_search",
+        "---",
+        "",
+        "Body text."
+      ].join("\r\n")
+    );
+
+    expect(prompt.name).toBe("researcher");
+    expect(prompt.description).toBe("Focused Windows prompt.");
+    expect(prompt.tools).toEqual(["read", "grep", "conject_paper_search"]);
+    expect(prompt.prompt).toBe("Body text.");
   });
 
   it("keeps researcher and builder report contracts explicit", () => {

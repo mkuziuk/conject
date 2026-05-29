@@ -50,6 +50,8 @@ describe("Conject extension", () => {
       expect(String(pi.messages[0]?.content)).toContain("Conject package:");
       expect(String(pi.messages[0]?.content)).toContain("Custom skill paths:");
       expect(String(pi.messages[0]?.content)).toContain("[project] project-style");
+      expect(String(pi.messages[0]?.content)).toContain("Subagent prompts:");
+      expect(String(pi.messages[0]?.content)).toContain("researcher: ok");
       expect(String(pi.messages[0]?.content)).toContain("Registered Conject tools:");
     } finally {
       rmSync(dir, { recursive: true, force: true });

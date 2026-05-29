@@ -4,9 +4,17 @@ import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import { getConjectSkillLocations, listConjectSkills, type ConjectSkillListEntry } from "./custom-skills.js";
 import { inspectCredentialStore, resolveWebSearchStatus } from "./credentials.js";
 import { resolveConjectEnvironment } from "./env.js";
-import { getConjectExtensionPath, getConjectSkillsPath, getPackageRoot } from "./paths.js";
+import { getConjectExtensionPath, getConjectSkillsPath, getConjectSubagentsPath, getPackageRoot } from "./paths.js";
 import { formatResearcherWebSearchBudget } from "./search-budget.js";
 import { inspectModelAuthStore } from "./setup.js";
+import { loadSubagentPrompt, SUBAGENT_PROMPT_NAMES, type SubagentPromptName } from "./subagent-prompts.js";
+
+export interface SubagentPromptStatus {
+  name: SubagentPromptName;
+  path: string;
+  ok: boolean;
+  error?: string;
+}
 
 export interface DoctorInfo {
   packageName: string;
@@ -19,6 +27,7 @@ export interface DoctorInfo {
   skillsPath: string;
   customSkillPaths: Array<{ label: string; path: string }>;
   customSkills: Array<Pick<ConjectSkillListEntry, "name" | "scope">>;
+  subagentPrompts: SubagentPromptStatus[];
   credentialPath: string;
   credentialsExist: boolean;
   credentialPermissionsOk: boolean;
@@ -54,6 +63,7 @@ export function getDoctorInfo(cwd = process.cwd(), env: NodeJS.ProcessEnv = proc
       .filter((location) => location.scope !== "bundled")
       .map((location) => ({ label: location.label, path: location.path })),
     customSkills: customSkillList.map((skill) => ({ name: skill.name, scope: skill.scope })),
+    subagentPrompts: inspectSubagentPrompts(),
     credentialPath: credentials.path,
     credentialsExist: credentials.exists,
     credentialPermissionsOk: credentials.permissionsOk,
@@ -101,9 +111,33 @@ export function formatDoctorInfo(info: DoctorInfo): string {
     "Custom skills:",
     ...(info.customSkills.length ? info.customSkills.map((skill) => `- [${skill.scope}] ${skill.name}`) : ["- none"]),
     "",
+    "Subagent prompts:",
+    ...info.subagentPrompts.map(formatSubagentPromptStatus),
+    "",
     "Registered Conject tools:",
     ...info.tools.map((tool) => `- ${tool}`)
   ].join("\n");
+}
+
+function inspectSubagentPrompts(): SubagentPromptStatus[] {
+  return SUBAGENT_PROMPT_NAMES.map((name) => {
+    try {
+      const prompt = loadSubagentPrompt(name);
+      return { name, path: prompt.path, ok: true };
+    } catch (error) {
+      return {
+        name,
+        path: join(getConjectSubagentsPath(), `${name}.md`),
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+}
+
+function formatSubagentPromptStatus(status: SubagentPromptStatus): string {
+  if (status.ok) return `- ${status.name}: ok (${status.path})`;
+  return `- ${status.name}: failed (${status.path}) ${status.error ?? ""}`.trimEnd();
 }
 
 function listSkillNames(skillsPath: string): string[] {
