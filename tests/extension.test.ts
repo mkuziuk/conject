@@ -36,12 +36,20 @@ describe("Conject extension", () => {
   it("prints doctor information through /conject-doctor", async () => {
     const dir = mkdtempSync(join(tmpdir(), "conject-extension-"));
     try {
+      mkdirSync(join(dir, ".conject", "skills", "project-style"), { recursive: true });
+      writeFileSync(
+        join(dir, ".conject", "skills", "project-style", "SKILL.md"),
+        "---\nname: project-style\ndescription: Project style guidance.\n---\n",
+        "utf8"
+      );
       const pi = new FakePi();
       await createConjectExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
       await pi.command("conject-doctor").handler("", fakeCommandContext(dir));
 
       expect(pi.messages).toHaveLength(1);
       expect(String(pi.messages[0]?.content)).toContain("Conject package:");
+      expect(String(pi.messages[0]?.content)).toContain("Custom skill paths:");
+      expect(String(pi.messages[0]?.content)).toContain("[project] project-style");
       expect(String(pi.messages[0]?.content)).toContain("Registered Conject tools:");
     } finally {
       rmSync(dir, { recursive: true, force: true });

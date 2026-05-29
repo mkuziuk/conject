@@ -168,6 +168,22 @@ Conject ships six Pi skills:
 
 The high-level workflow skill coordinates the lower-level skills. Researcher subagents use `conject-research-agent` and `conject-source-evidence`; the reviewer uses `conject-review-ranking` and `conject-implementation-proposal`.
 
+Custom skills can be added in Conject-native locations:
+
+- user-wide skills: `~/.conject/skills/<skill-name>/SKILL.md`
+- project-local skills: `<target-project>/.conject/skills/<skill-name>/SKILL.md`
+
+Project skills are the default for the helper command:
+
+```bash
+conject skills init project-style
+conject skills init team-research --user
+conject skills list
+conject skills paths
+```
+
+Conject also preserves Pi-native skill discovery from `~/.conject/agent/skills` and `<target-project>/.pi/skills`, and explicit `--skill <path>` arguments still work. Conject custom skill directories and explicit skill paths are loaded for the main session and for researcher, reviewer, and builder subagents.
+
 ## Subagents
 
 Subagent prompts live under `subagents/`:

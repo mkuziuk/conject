@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
+import { getConjectSkillLocations, listConjectSkills, type ConjectSkillListEntry } from "./custom-skills.js";
 import { inspectCredentialStore, resolveWebSearchStatus } from "./credentials.js";
 import { resolveConjectEnvironment } from "./env.js";
 import { getConjectExtensionPath, getConjectSkillsPath, getPackageRoot } from "./paths.js";
@@ -16,6 +17,8 @@ export interface DoctorInfo {
   skipVersionCheck: string;
   extensionPath: string;
   skillsPath: string;
+  customSkillPaths: Array<{ label: string; path: string }>;
+  customSkills: Array<Pick<ConjectSkillListEntry, "name" | "scope">>;
   credentialPath: string;
   credentialsExist: boolean;
   credentialPermissionsOk: boolean;
@@ -31,6 +34,8 @@ export function getDoctorInfo(cwd = process.cwd(), env: NodeJS.ProcessEnv = proc
   const configured = resolveConjectEnvironment({ cwd, env, home });
   const credentials = inspectCredentialStore({ home });
   const modelAuth = inspectModelAuthStore(home);
+  const skillLocations = getConjectSkillLocations({ cwd, home });
+  const customSkillList = listConjectSkills({ cwd, home }).skills.filter((skill) => skill.scope !== "bundled");
   const pkg = JSON.parse(readFileSync(join(getPackageRoot(), "package.json"), "utf8")) as {
     name?: string;
     version?: string;
@@ -45,6 +50,10 @@ export function getDoctorInfo(cwd = process.cwd(), env: NodeJS.ProcessEnv = proc
     skipVersionCheck: configured.skipVersionCheck,
     extensionPath: getConjectExtensionPath(),
     skillsPath: getConjectSkillsPath(),
+    customSkillPaths: skillLocations
+      .filter((location) => location.scope !== "bundled")
+      .map((location) => ({ label: location.label, path: location.path })),
+    customSkills: customSkillList.map((skill) => ({ name: skill.name, scope: skill.scope })),
     credentialPath: credentials.path,
     credentialsExist: credentials.exists,
     credentialPermissionsOk: credentials.permissionsOk,
@@ -75,6 +84,8 @@ export function formatDoctorInfo(info: DoctorInfo): string {
     `PI_SKIP_VERSION_CHECK: ${info.skipVersionCheck}`,
     `Extension: ${info.extensionPath}`,
     `Skills: ${info.skillsPath}`,
+    "Custom skill paths:",
+    ...info.customSkillPaths.map((location) => `- ${location.label}: ${location.path}`),
     `Credentials: ${info.credentialPath}`,
     `Credentials exist: ${info.credentialsExist ? "yes" : "no"}`,
     `Credential permissions: ${info.credentialPermissionsOk ? "ok" : "check"}`,
@@ -86,6 +97,9 @@ export function formatDoctorInfo(info: DoctorInfo): string {
     "",
     "Loaded Conject skills:",
     ...info.skills.map((skill) => `- ${skill}`),
+    "",
+    "Custom skills:",
+    ...(info.customSkills.length ? info.customSkills.map((skill) => `- [${skill.scope}] ${skill.name}`) : ["- none"]),
     "",
     "Registered Conject tools:",
     ...info.tools.map((tool) => `- ${tool}`)

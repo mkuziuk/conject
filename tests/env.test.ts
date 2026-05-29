@@ -1,8 +1,14 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildConjectArgs, formatPrintEnv } from "../src/cli.js";
+import {
+  CONJECT_EXTRA_SKILL_PATHS_ENV,
+  getConjectProjectSkillsPath,
+  getConjectUserSkillsPath,
+  rememberExplicitSkillPaths
+} from "../src/custom-skills.js";
 import { configureConjectEnvironment } from "../src/env.js";
 import { CONJECT_SYSTEM_PROMPT } from "../src/prompt.js";
 
@@ -31,6 +37,28 @@ describe("Conject launcher environment", () => {
     expect(args).toContain("--thinking");
   });
 
+  it("injects existing Conject custom skill directories for normal runs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "conject-env-"));
+    try {
+      const home = join(dir, "home");
+      const cwd = join(dir, "project");
+      mkdirSync(getConjectUserSkillsPath(home), { recursive: true });
+      mkdirSync(getConjectProjectSkillsPath(cwd), { recursive: true });
+
+      const args = buildConjectArgs(["hello"], {}, { cwd, home });
+      expect(args).toContain(getConjectUserSkillsPath(home));
+      expect(args).toContain(getConjectProjectSkillsPath(cwd));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("remembers explicit skill paths for subagents", () => {
+    const env: NodeJS.ProcessEnv = {};
+    rememberExplicitSkillPaths(["--skill", "./team-skills", "hello"], env);
+    expect(env[CONJECT_EXTRA_SKILL_PATHS_ENV]).toBe(JSON.stringify(["./team-skills"]));
+  });
+
   it("does not inject prompt flags into package commands", () => {
     expect(buildConjectArgs(["install", "./pkg"])).toEqual(["install", "./pkg"]);
   });
@@ -38,6 +66,7 @@ describe("Conject launcher environment", () => {
   it("does not inject prompt flags into Conject setup commands", () => {
     expect(buildConjectArgs(["setup"])).toEqual(["setup"]);
     expect(buildConjectArgs(["credentials", "status"])).toEqual(["credentials", "status"]);
+    expect(buildConjectArgs(["skills", "list"])).toEqual(["skills", "list"]);
   });
 
   it("does not inject parent prompt flags into internal child runs", () => {

@@ -4,6 +4,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import {
+  CONJECT_EXTRA_SKILL_PATHS_ENV,
+  getConjectProjectSkillsPath,
+  getConjectUserSkillsPath
+} from "../src/custom-skills.js";
+import {
   applyJsonEventToTrace,
   buildChildConjectArgs,
   type ChildRunner,
@@ -33,6 +38,34 @@ describe("subagent runtime helpers", () => {
     expect(args).toContain("--skill");
     expect(args).toContain("--tools");
     expect(args).not.toContain("--extension");
+  });
+
+  it("builds child args with custom and forwarded skill paths", () => {
+    const oldExtraSkills = process.env[CONJECT_EXTRA_SKILL_PATHS_ENV];
+    const dir = mkdtempSync(join(tmpdir(), "conject-subagent-skills-"));
+    try {
+      const home = join(dir, "home");
+      const cwd = join(dir, "project");
+      const forwarded = join(dir, "explicit-skills");
+      mkdirSync(getConjectUserSkillsPath(home), { recursive: true });
+      mkdirSync(getConjectProjectSkillsPath(cwd), { recursive: true });
+      process.env[CONJECT_EXTRA_SKILL_PATHS_ENV] = JSON.stringify([forwarded]);
+
+      const args = buildChildConjectArgs({
+        cwd,
+        env: { HOME: home },
+        systemPrompt: "child prompt",
+        task: "do research",
+        tools: ["read"]
+      });
+
+      expect(args).toContain(getConjectUserSkillsPath(home));
+      expect(args).toContain(getConjectProjectSkillsPath(cwd));
+      expect(args).toContain(forwarded);
+    } finally {
+      restoreEnv(CONJECT_EXTRA_SKILL_PATHS_ENV, oldExtraSkills);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("parses child JSON events into a display trace", () => {

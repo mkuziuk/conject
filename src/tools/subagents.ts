@@ -12,7 +12,7 @@ import {
   defaultBuildIdFromProposal,
   getBuildPath
 } from "../builds.js";
-import { getConjectSkillsPath } from "../paths.js";
+import { getConjectSkillLoadPaths, skillPathsToArgs } from "../custom-skills.js";
 import { resolveResearcherWebSearchBudget, WEB_SEARCH_BUDGET_ENV } from "../search-budget.js";
 import { loadSubagentPrompt } from "../subagent-prompts.js";
 import { safeFileSegment, writeResearchArtifact } from "./artifacts.js";
@@ -432,7 +432,13 @@ export function createSpawnBuilderTool(childRunner: ChildRunner = runChildConjec
   };
 }
 
-export function buildChildConjectArgs(input: Pick<ChildRunInput, "systemPrompt" | "task" | "tools">): string[] {
+export function buildChildConjectArgs(
+  input: Pick<ChildRunInput, "systemPrompt" | "task" | "tools"> & {
+    cwd?: string;
+    env?: Record<string, string | undefined>;
+  }
+): string[] {
+  const env = { ...process.env, ...input.env };
   return [
     "--mode",
     "json",
@@ -440,8 +446,7 @@ export function buildChildConjectArgs(input: Pick<ChildRunInput, "systemPrompt" 
     "-p",
     "--system-prompt",
     input.systemPrompt,
-    "--skill",
-    getConjectSkillsPath(),
+    ...skillPathsToArgs(getConjectSkillLoadPaths({ cwd: input.cwd, env, includeExtraEnv: true })),
     "--tools",
     input.tools.join(","),
     input.task
