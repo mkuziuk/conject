@@ -42,7 +42,7 @@ describe("Conject setup", () => {
     const dir = mkdtempSync(join(tmpdir(), "conject-setup-"));
     try {
       const io = new ScriptedSetupIO({
-        selects: ["configure", "api_key", "openai", "skip", "skip"],
+        selects: ["configure", "api_key", "openai", "skip", "skip", "keep"],
         inputs: ["sk-test-secret"]
       });
 
@@ -63,7 +63,7 @@ describe("Conject setup", () => {
     try {
       const env: NodeJS.ProcessEnv = {};
       const io = new ScriptedSetupIO({
-        selects: ["skip", "tavily", "skip"],
+        selects: ["skip", "tavily", "skip", "3"],
         inputs: ["tavily-secret"]
       });
 
@@ -72,7 +72,9 @@ describe("Conject setup", () => {
       const credentialPath = join(dir, ".conject", "credentials.env");
       const parsed = parseCredentialText(readFileSync(credentialPath, "utf8"));
       expect(parsed.TAVILY_API_KEY).toBe("tavily-secret");
+      expect(parsed.CONJECT_RESEARCHER_WEB_SEARCH_BUDGET).toBe("3");
       expect(env.TAVILY_API_KEY).toBe("tavily-secret");
+      expect(env.CONJECT_RESEARCHER_WEB_SEARCH_BUDGET).toBe("3");
       expect((statSync(credentialPath).mode & 0o777).toString(8)).toBe("600");
       expect(io.output()).not.toContain("tavily-secret");
     } finally {
@@ -88,7 +90,28 @@ describe("Conject setup", () => {
       expect(status.modelAuth.exists).toBe(false);
       expect(status.toolCredentials.exists).toBe(false);
       expect(status.webSearch).toBe("none");
+      expect(status.researcherWebSearchBudget).toBe("5 (default)");
       expect(existsSync(join(dir, ".conject"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("stores custom researcher web search budgets in credentials.env", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "conject-setup-"));
+    try {
+      const env: NodeJS.ProcessEnv = {};
+      const io = new ScriptedSetupIO({
+        selects: ["skip", "skip", "skip", "custom"],
+        inputs: ["7"]
+      });
+
+      await runConjectSetup({ home: dir, env, io });
+
+      const credentialPath = join(dir, ".conject", "credentials.env");
+      const parsed = parseCredentialText(readFileSync(credentialPath, "utf8"));
+      expect(parsed.CONJECT_RESEARCHER_WEB_SEARCH_BUDGET).toBe("7");
+      expect(env.CONJECT_RESEARCHER_WEB_SEARCH_BUDGET).toBe("7");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

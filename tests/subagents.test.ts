@@ -166,11 +166,15 @@ describe("subagent runtime helpers", () => {
   });
 
   it("includes method details and concrete examples in researcher task instructions", async () => {
+    const oldResearcherBudget = process.env.CONJECT_RESEARCHER_WEB_SEARCH_BUDGET;
+    delete process.env.CONJECT_RESEARCHER_WEB_SEARCH_BUDGET;
     const dir = mkdtempSync(join(tmpdir(), "conject-researcher-contract-"));
     try {
       let task = "";
+      let childEnv: Record<string, string | undefined> | undefined;
       const childRunner: ChildRunner = async (input) => {
         task = input.task;
+        childEnv = input.env;
         return {
           stdout: [
             "## Summary",
@@ -195,7 +199,39 @@ describe("subagent runtime helpers", () => {
       expect(task).toContain("Method details and concrete examples");
       expect(task).toContain("concrete inputs and outputs");
       expect(task).toContain("at least one worked example");
+      expect(task).toContain("at most 5 times");
+      expect(childEnv?.CONJECT_WEB_SEARCH_BUDGET).toBe("5");
     } finally {
+      restoreEnv("CONJECT_RESEARCHER_WEB_SEARCH_BUDGET", oldResearcherBudget);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("passes configured researcher web search budget to child Conject", async () => {
+    const oldResearcherBudget = process.env.CONJECT_RESEARCHER_WEB_SEARCH_BUDGET;
+    process.env.CONJECT_RESEARCHER_WEB_SEARCH_BUDGET = "3";
+    const dir = mkdtempSync(join(tmpdir(), "conject-researcher-budget-"));
+    try {
+      let task = "";
+      let childEnv: Record<string, string | undefined> | undefined;
+      const childRunner: ChildRunner = async (input) => {
+        task = input.task;
+        childEnv = input.env;
+        return { stdout: "## Summary\n\nDone.", stderr: "", exitCode: 0 };
+      };
+      const tool = createSpawnResearcherTool(childRunner);
+      await tool.execute(
+        "tool-1",
+        { taskId: "topic", title: "Topic", question: "Question?" },
+        undefined,
+        undefined,
+        fakeContext(dir)
+      );
+
+      expect(task).toContain("at most 3 times");
+      expect(childEnv?.CONJECT_WEB_SEARCH_BUDGET).toBe("3");
+    } finally {
+      restoreEnv("CONJECT_RESEARCHER_WEB_SEARCH_BUDGET", oldResearcherBudget);
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -338,4 +374,9 @@ function renderExpanded(tool: ReturnType<typeof createSpawnResearcherTool>, deta
     .renderResult?.({ content: [{ type: "text", text: "running" }], details } as any, { expanded: true, isPartial: true }, fakeTheme(), {} as any)
     .render(120)
     .join("\n") ?? "";
+}
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
 }

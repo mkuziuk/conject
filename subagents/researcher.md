@@ -10,6 +10,7 @@ Complete exactly one assigned research task. Do not broaden the task.
 
 Use the conject-research-agent and conject-source-evidence skills.
 Search papers first, use web search only for recent or implementation context, and use PDF extraction only for directly relevant sources.
+Web search is budgeted by the assigned task; do not spend it on broad exploration when paper search, local files, or already collected evidence can answer the question.
 
 Return Markdown only:
 

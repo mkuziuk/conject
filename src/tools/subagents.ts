@@ -13,6 +13,7 @@ import {
   getBuildPath
 } from "../builds.js";
 import { getConjectSkillsPath } from "../paths.js";
+import { resolveResearcherWebSearchBudget, WEB_SEARCH_BUDGET_ENV } from "../search-budget.js";
 import { loadSubagentPrompt } from "../subagent-prompts.js";
 import { safeFileSegment, writeResearchArtifact } from "./artifacts.js";
 import { textResult, truncateText } from "./result.js";
@@ -27,6 +28,7 @@ export interface ChildRunInput {
   systemPrompt: string;
   task: string;
   tools: string[];
+  env?: Record<string, string | undefined>;
   signal?: AbortSignal;
   onUpdate?: (trace: ChildRunTrace) => void;
 }
@@ -149,6 +151,7 @@ export function createSpawnResearcherTool(childRunner: ChildRunner = runChildCon
       const input = params as SpawnResearcherParams;
       const maxOutputChars = boundOutput(input.maxOutputChars);
       const prompt = loadSubagentPrompt("researcher");
+      const webSearchBudget = resolveResearcherWebSearchBudget(process.env);
       const task = [
         `# Research Task: ${input.title}`,
         "",
@@ -159,6 +162,9 @@ export function createSpawnResearcherTool(childRunner: ChildRunner = runChildCon
         "",
         "## Context",
         input.context?.trim() || "(none provided)",
+        "",
+        "## Search Budget",
+        `You may call conject_web_search at most ${webSearchBudget} time${webSearchBudget === 1 ? "" : "s"}. Prefer conject_paper_search first; reserve web search for recent, implementation, documentation, dataset, or non-paper evidence.`,
         "",
         "## Required Memo Format",
         "- Summary",
@@ -182,6 +188,7 @@ export function createSpawnResearcherTool(childRunner: ChildRunner = runChildCon
           systemPrompt: prompt.prompt,
           task,
           tools: prompt.tools,
+          env: { [WEB_SEARCH_BUDGET_ENV]: String(webSearchBudget) },
           signal,
           onUpdate: (trace) => emit(trace, "running")
         });
@@ -453,7 +460,8 @@ export async function runChildConject(input: ChildRunInput): Promise<ChildRunRes
       env: {
         ...process.env,
         PI_SKIP_VERSION_CHECK: "1",
-        CONJECT_INTERNAL_CHILD: "1"
+        CONJECT_INTERNAL_CHILD: "1",
+        ...input.env
       }
     });
 

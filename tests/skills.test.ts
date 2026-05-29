@@ -52,8 +52,10 @@ describe("Conject subagent prompts", () => {
 
     expect(researcher).toContain("## Method Details and Concrete Examples");
     expect(researcher).toContain("at least one worked example");
+    expect(researcher).toContain("Web search is budgeted");
     expect(researchAgentSkill).toContain("## Method Details and Concrete Examples");
     expect(researchAgentSkill).toContain("concrete inputs, outputs, assumptions");
+    expect(researchAgentSkill).toContain("assigned web-search budget");
     expect(builder).toContain("what the implementation does");
     expect(builder).toContain("how to run it from the implementation directory");
   });

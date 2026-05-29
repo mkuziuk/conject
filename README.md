@@ -140,6 +140,8 @@ OpenAlex paper search works without a key. Set `OPENALEX_MAILTO` if you want pol
 
 Tool output is bounded by default: PDF extraction returns up to 80,000 extracted characters unless `maxChars` is set, paper/web search return up to 30,000 formatted characters unless `maxChars` is set, and search result counts clamp to 1-10.
 
+Researcher subagents also get a separate web-search call budget. The default is 5 `conject_web_search` calls per researcher; `conject setup` can set `CONJECT_RESEARCHER_WEB_SEARCH_BUDGET` to a non-negative integer. Use `0` to disable researcher web search. When a researcher spends its budget, `conject_web_search` returns a budget message instead of failing the subagent, so the workflow can continue with papers, local files, and collected evidence.
+
 Conject loads these values from the process environment first, then from `~/.conject/credentials.env`. The process environment wins if both are set. Do not put API keys directly in `~/.zshrc`; use the private credential file instead:
 
 ```bash

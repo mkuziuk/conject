@@ -1,12 +1,14 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { getDefaultCredentialStorePath } from "./paths.js";
+import { formatResearcherWebSearchBudget, RESEARCHER_WEB_SEARCH_BUDGET_ENV } from "./search-budget.js";
 
 export const CREDENTIAL_KEYS = [
   "TAVILY_API_KEY",
   "SEARXNG_BASE_URL",
   "CONJECT_SEARXNG_URL",
-  "OPENALEX_MAILTO"
+  "OPENALEX_MAILTO",
+  RESEARCHER_WEB_SEARCH_BUDGET_ENV
 ] as const;
 
 export type CredentialKey = (typeof CREDENTIAL_KEYS)[number];
@@ -136,6 +138,7 @@ export function formatCredentialStoreStatus(status: CredentialStoreStatus, env: 
     `Exists: ${status.exists ? "yes" : "no"}`,
     `Permissions: ${permissionText}`,
     `Effective web search: ${resolveWebSearchStatus(env)}`,
+    `Researcher web search budget: ${formatResearcherWebSearchBudget(env)}`,
     "",
     "Configured keys:",
     ...CREDENTIAL_KEYS.map((key) => `- ${key}: ${status.keys[key] ? "set" : "unset"}`),
@@ -196,7 +199,8 @@ function emptyKeyStatus(): Record<CredentialKey, boolean> {
     TAVILY_API_KEY: false,
     SEARXNG_BASE_URL: false,
     CONJECT_SEARXNG_URL: false,
-    OPENALEX_MAILTO: false
+    OPENALEX_MAILTO: false,
+    CONJECT_RESEARCHER_WEB_SEARCH_BUDGET: false
   };
 }
 
@@ -209,6 +213,7 @@ function defaultCredentialTemplate(): string {
     "# SEARXNG_BASE_URL=",
     "# CONJECT_SEARXNG_URL=",
     "# OPENALEX_MAILTO=",
+    "# CONJECT_RESEARCHER_WEB_SEARCH_BUDGET=5",
     ""
   ].join("\n");
 }

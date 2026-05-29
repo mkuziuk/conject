@@ -141,7 +141,7 @@ function formatSetupHelp(): string {
     "Usage:",
     "  conject setup",
     "",
-    "Guides model provider auth and Conject tool credentials.",
+    "Guides model provider auth, Conject tool credentials, and researcher web-search budgets.",
     "Model auth is stored in ~/.conject/agent/auth.json.",
     "Tool credentials are stored in ~/.conject/credentials.env."
   ].join("\n");

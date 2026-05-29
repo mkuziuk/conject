@@ -1,11 +1,30 @@
 import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { parseNonNegativeIntegerBudget, WEB_SEARCH_BUDGET_ENV } from "../search-budget.js";
 import { errorResult, textResult, truncateText } from "./result.js";
 
 const MAX_RESULTS = 10;
 const DEFAULT_SEARCH_MAX_CHARS = 30_000;
 const MAX_SEARCH_MAX_CHARS = 120_000;
 const MAX_RESULT_TEXT_CHARS = 4_000;
+
+interface WebSearchBudgetState {
+  raw?: string;
+  used: number;
+}
+
+interface WebSearchBudgetSnapshot {
+  limit: number;
+  used: number;
+  remaining: number;
+}
+
+const webSearchBudgetState: WebSearchBudgetState = { used: 0 };
+
+export function resetWebSearchBudgetForTests(): void {
+  webSearchBudgetState.raw = undefined;
+  webSearchBudgetState.used = 0;
+}
 
 export interface PaperSearchResult {
   title: string;
@@ -89,33 +108,102 @@ export function createWebSearchTool(fetchImpl: typeof fetch = fetch): ToolDefini
       const input = params as SearchParams;
       const limit = boundLimit(input.limit, 5);
       const maxChars = boundMaxChars(input.maxChars);
+      const budgetBeforeProvider = peekWebSearchBudget();
       try {
         const tavilyKey = process.env.TAVILY_API_KEY;
         const searxngBase = process.env.SEARXNG_BASE_URL ?? process.env.CONJECT_SEARXNG_URL;
         const provider = tavilyKey ? "tavily" : searxngBase ? "searxng" : "none";
-        const results = boundWebResults(
-          tavilyKey
-            ? await searchTavily(fetchImpl, tavilyKey, input.query, limit, signal)
-            : searxngBase
-              ? await searchSearxng(fetchImpl, searxngBase, input.query, limit, signal)
-              : []
-        );
 
         if (provider === "none") {
           return textResult(
             "No web search provider is configured. Set TAVILY_API_KEY, SEARXNG_BASE_URL, or CONJECT_SEARXNG_URL.",
-            { provider, query: input.query, maxChars, truncated: false, results }
+            { provider, query: input.query, maxChars, truncated: false, results: [], ...budgetDetails(budgetBeforeProvider) }
           );
         }
 
+        const budgetAttempt = consumeWebSearchBudget();
+        if (!budgetAttempt.allowed) {
+          return textResult(
+            `Web search budget exhausted (${budgetAttempt.budget.used}/${budgetAttempt.budget.limit}). Continue with paper search, local files, and already collected evidence.`,
+            {
+              provider,
+              query: input.query,
+              maxChars,
+              truncated: false,
+              results: [],
+              budgetExhausted: true,
+              ...budgetDetails(budgetAttempt.budget)
+            }
+          );
+        }
+
+        const results = boundWebResults(
+          tavilyKey
+            ? await searchTavily(fetchImpl, tavilyKey, input.query, limit, signal)
+            : await searchSearxng(fetchImpl, searxngBase as string, input.query, limit, signal)
+        );
+
         const rawText = results.length ? results.map(formatWebResult).join("\n\n") : `No web results found for "${input.query}".`;
         const output = boundToolText(rawText, maxChars);
-        return textResult(output.text, { provider, query: input.query, maxChars, truncated: output.truncated, results });
+        return textResult(output.text, {
+          provider,
+          query: input.query,
+          maxChars,
+          truncated: output.truncated,
+          results,
+          ...budgetDetails(budgetAttempt.budget)
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        return errorResult(`Web search failed: ${message}`, { provider: "unknown", query: input.query, maxChars, truncated: false, results: [] });
+        return errorResult(`Web search failed: ${message}`, {
+          provider: "unknown",
+          query: input.query,
+          maxChars,
+          truncated: false,
+          results: [],
+          ...budgetDetails(peekWebSearchBudget())
+        });
       }
     }
+  };
+}
+
+function peekWebSearchBudget(): WebSearchBudgetSnapshot | undefined {
+  const raw = process.env[WEB_SEARCH_BUDGET_ENV];
+  if (raw !== webSearchBudgetState.raw) {
+    webSearchBudgetState.raw = raw;
+    webSearchBudgetState.used = 0;
+  }
+  const limit = parseNonNegativeIntegerBudget(raw);
+  if (limit === undefined) return undefined;
+  return {
+    limit,
+    used: webSearchBudgetState.used,
+    remaining: Math.max(0, limit - webSearchBudgetState.used)
+  };
+}
+
+function consumeWebSearchBudget(): { allowed: true; budget?: WebSearchBudgetSnapshot } | { allowed: false; budget: WebSearchBudgetSnapshot } {
+  const current = peekWebSearchBudget();
+  if (!current) return { allowed: true };
+  if (current.remaining <= 0) return { allowed: false, budget: current };
+  webSearchBudgetState.used++;
+  return {
+    allowed: true,
+    budget: {
+      limit: current.limit,
+      used: webSearchBudgetState.used,
+      remaining: Math.max(0, current.limit - webSearchBudgetState.used)
+    }
+  };
+}
+
+function budgetDetails(budget: WebSearchBudgetSnapshot | undefined): Record<string, number> {
+  if (!budget) return {};
+  return {
+    budgetLimit: budget.limit,
+    budgetUsed: budget.used,
+    budgetRemaining: budget.remaining
   };
 }
 

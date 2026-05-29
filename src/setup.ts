@@ -13,6 +13,12 @@ import {
   setCredentialValue
 } from "./credentials.js";
 import { getDefaultConjectAgentDir, getDefaultCredentialStorePath } from "./paths.js";
+import {
+  DEFAULT_RESEARCHER_WEB_SEARCH_BUDGET,
+  formatResearcherWebSearchBudget,
+  parseNonNegativeIntegerBudget,
+  RESEARCHER_WEB_SEARCH_BUDGET_ENV
+} from "./search-budget.js";
 
 type AuthType = "oauth" | "api_key";
 
@@ -89,6 +95,7 @@ export interface SetupStatus {
   modelAuth: ModelAuthStoreStatus;
   toolCredentials: ReturnType<typeof inspectCredentialStore>;
   webSearch: "tavily" | "searxng" | "none";
+  researcherWebSearchBudget: string;
 }
 
 interface ProviderOption {
@@ -155,7 +162,8 @@ export function inspectSetupStatus(options: RunConjectSetupOptions = {}): SetupS
     paths: getSetupPaths(options.home),
     modelAuth: inspectModelAuthStore(options.home),
     toolCredentials: inspectCredentialStore({ home: options.home }),
-    webSearch: resolveWebSearchStatus(env)
+    webSearch: resolveWebSearchStatus(env),
+    researcherWebSearchBudget: formatResearcherWebSearchBudget(env)
   };
 }
 
@@ -169,7 +177,8 @@ export function formatSetupStatus(status: SetupStatus): string {
     `Model providers: ${modelProviders}`,
     `Tool credentials: ${status.toolCredentials.path}`,
     `Tool credential keys: ${toolKeys}`,
-    `Effective web search: ${status.webSearch}`
+    `Effective web search: ${status.webSearch}`,
+    `Researcher web search budget: ${status.researcherWebSearchBudget}`
   ].join("\n");
 }
 
@@ -189,6 +198,7 @@ export async function runConjectSetup(options: RunConjectSetupOptions = {}): Pro
 
   await configureModelProvider(io, authStorage, modelRegistry, paths.authPath);
   await configureToolCredentials(io, { home: options.home, env });
+  await configureResearcherWebSearchBudget(io, { home: options.home, env });
 
   io.write("\nSetup complete.\n");
   io.write(`${formatSetupStatus(inspectSetupStatus({ home: options.home, env }))}\n`);
@@ -403,6 +413,42 @@ async function configureToolCredentials(
       envValue: options.env.OPENALEX_MAILTO
     });
   }
+}
+
+async function configureResearcherWebSearchBudget(
+  io: SetupIO,
+  options: { home?: string; env: NodeJS.ProcessEnv }
+): Promise<void> {
+  const current = formatResearcherWebSearchBudget(options.env);
+  const choice = await io.select(`Researcher web search budget is ${current}.`, [
+    { value: "keep", label: "Keep current budget", description: "Leave researcher web search calls unchanged." },
+    {
+      value: String(DEFAULT_RESEARCHER_WEB_SEARCH_BUDGET),
+      label: `Default (${DEFAULT_RESEARCHER_WEB_SEARCH_BUDGET})`,
+      description: "Enough for focused source checks without broad web crawling."
+    },
+    { value: "3", label: "Strict (3)", description: "Prefer papers and only a few web checks per researcher." },
+    { value: "10", label: "Broad (10)", description: "Allow wider web exploration for each researcher." },
+    { value: "0", label: "Disable web search", description: "Researcher subagents receive no web-search calls." },
+    { value: "custom", label: "Custom", description: "Enter a non-negative integer." }
+  ]);
+  if (!choice || choice === "keep") return;
+
+  let value = choice;
+  if (choice === "custom") {
+    const raw = await io.input("Enter max conject_web_search calls per researcher:", { allowEmpty: true });
+    const parsed = parseNonNegativeIntegerBudget(raw);
+    if (parsed === undefined) {
+      io.write("Skipped researcher web search budget; enter a non-negative integer to change it.\n");
+      return;
+    }
+    value = String(parsed);
+  }
+
+  initializeCredentialStore({ home: options.home });
+  const result = setCredentialValue(RESEARCHER_WEB_SEARCH_BUDGET_ENV, value, { home: options.home });
+  options.env[RESEARCHER_WEB_SEARCH_BUDGET_ENV] = value;
+  io.write(`Saved ${result.key}=${value} in ${result.path}.\n`);
 }
 
 async function configureCredentialValue(

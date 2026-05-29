@@ -11,7 +11,7 @@ Use this order:
 
 1. Restate the task in one sentence.
 2. Search papers first with `conject_paper_search`.
-3. Use `conject_web_search` only for recent, implementation, documentation, or non-paper context.
+3. Use `conject_web_search` only for recent, implementation, documentation, dataset, or non-paper context, and stay within the assigned web-search budget.
 4. Use `conject_extract_pdf` only when a source looks directly relevant.
 5. Extract claims using `conject-source-evidence`.
 6. Explain the researched method or mechanism with concrete examples.

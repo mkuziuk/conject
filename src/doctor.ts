@@ -4,6 +4,7 @@ import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import { inspectCredentialStore, resolveWebSearchStatus } from "./credentials.js";
 import { resolveConjectEnvironment } from "./env.js";
 import { getConjectExtensionPath, getConjectSkillsPath, getPackageRoot } from "./paths.js";
+import { formatResearcherWebSearchBudget } from "./search-budget.js";
 import { inspectModelAuthStore } from "./setup.js";
 
 export interface DoctorInfo {
@@ -23,6 +24,7 @@ export interface DoctorInfo {
   skills: string[];
   tools: string[];
   webSearch: "tavily" | "searxng" | "none";
+  researcherWebSearchBudget: string;
 }
 
 export function getDoctorInfo(cwd = process.cwd(), env: NodeJS.ProcessEnv = process.env, home?: string): DoctorInfo {
@@ -59,7 +61,8 @@ export function getDoctorInfo(cwd = process.cwd(), env: NodeJS.ProcessEnv = proc
       "conject_spawn_reviewer",
       "conject_spawn_builder"
     ],
-    webSearch: resolveWebSearchStatus(env)
+    webSearch: resolveWebSearchStatus(env),
+    researcherWebSearchBudget: formatResearcherWebSearchBudget(env)
   };
 }
 
@@ -78,6 +81,7 @@ export function formatDoctorInfo(info: DoctorInfo): string {
     `Model auth: ${info.modelAuthPath}`,
     `Model providers: ${info.modelAuthProviders.length ? info.modelAuthProviders.join(", ") : "none"}`,
     `Web search: ${info.webSearch}`,
+    `Researcher web search budget: ${info.researcherWebSearchBudget}`,
     `Setup: run conject setup for guided provider and tool credential setup`,
     "",
     "Loaded Conject skills:",
