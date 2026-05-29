@@ -1,16 +1,15 @@
 {
-  "name": "conject-pi",
+  "name": "conject",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A small research-oriented Pi package with tools and skills for Conject workflows.",
+  "description": "A small research-oriented package with tools and skills for Conject workflows.",
   "keywords": [
-    "pi-package",
     "research",
     "agents"
   ],
   "bin": {
-    "conject-pi": "./dist/cli.js"
+    "conject": "./dist/cli.js"
   },
   "pi": {
     "extensions": [

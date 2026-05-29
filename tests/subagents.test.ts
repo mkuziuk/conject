@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import {
   applyJsonEventToTrace,
-  buildChildPiArgs,
+  buildChildConjectArgs,
   createInitialTrace,
   createSpawnResearcherTool,
   summarizeMarkdown,
@@ -11,8 +11,8 @@ import {
 } from "../src/tools/subagents.js";
 
 describe("subagent runtime helpers", () => {
-  it("builds child Pi args without loading a duplicate extension", () => {
-    const args = buildChildPiArgs({
+  it("builds child args without loading a duplicate extension", () => {
+    const args = buildChildConjectArgs({
       systemPrompt: "child prompt",
       task: "do research",
       tools: ["read", "conject_paper_search"]
@@ -25,7 +25,7 @@ describe("subagent runtime helpers", () => {
     expect(args).not.toContain("--extension");
   });
 
-  it("parses child Pi JSON events into a display trace", () => {
+  it("parses child JSON events into a display trace", () => {
     const trace = createInitialTrace("research task");
 
     applyJsonEventToTrace(

@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { getDefaultConjectAgentDir, getDefaultProjectSessionDir } from "./paths.js";
+import { loadConjectCredentials } from "./credentials.js";
 
 export interface ConjectEnvironment {
   agentDir: string;
@@ -13,17 +14,26 @@ export interface ConfigureConjectEnvironmentOptions {
   env?: NodeJS.ProcessEnv;
 }
 
-export function configureConjectPiEnvironment(options: ConfigureConjectEnvironmentOptions = {}): ConjectEnvironment {
+export function resolveConjectEnvironment(options: ConfigureConjectEnvironmentOptions = {}): ConjectEnvironment {
   const env = options.env ?? process.env;
-  const agentDir = env.CONJECT_PI_AGENT_DIR ?? getDefaultConjectAgentDir(options.home);
-  const sessionDir = env.CONJECT_PI_SESSION_DIR ?? getDefaultProjectSessionDir(options.cwd);
+  loadConjectCredentials({ env, home: options.home });
 
-  env.PI_CODING_AGENT_DIR = agentDir;
-  env.PI_CODING_AGENT_SESSION_DIR = sessionDir;
-  env.PI_SKIP_VERSION_CHECK = "1";
-
-  mkdirSync(agentDir, { recursive: true });
-  mkdirSync(sessionDir, { recursive: true });
+  const agentDir = env.CONJECT_AGENT_DIR ?? getDefaultConjectAgentDir(options.home);
+  const sessionDir = env.CONJECT_SESSION_DIR ?? getDefaultProjectSessionDir(options.cwd);
 
   return { agentDir, sessionDir, skipVersionCheck: "1" };
+}
+
+export function configureConjectEnvironment(options: ConfigureConjectEnvironmentOptions = {}): ConjectEnvironment {
+  const env = options.env ?? process.env;
+  const resolved = resolveConjectEnvironment(options);
+
+  env.PI_CODING_AGENT_DIR = resolved.agentDir;
+  env.PI_CODING_AGENT_SESSION_DIR = resolved.sessionDir;
+  env.PI_SKIP_VERSION_CHECK = resolved.skipVersionCheck;
+
+  mkdirSync(resolved.agentDir, { recursive: true });
+  mkdirSync(resolved.sessionDir, { recursive: true });
+
+  return resolved;
 }

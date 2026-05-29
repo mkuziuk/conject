@@ -13,17 +13,17 @@ import {
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 type ThinkingLevelName = (typeof THINKING_LEVELS)[number];
 
-export interface ConjectPiExtensionOptions {
+export interface ConjectExtensionOptions {
   childRunner?: ChildRunner;
   fetch?: typeof fetch;
 }
 
-export function createConjectPiExtensionFactory(options: ConjectPiExtensionOptions = {}): ExtensionFactory {
+export function createConjectExtensionFactory(options: ConjectExtensionOptions = {}): ExtensionFactory {
   return (pi: ExtensionAPI) => {
     const fetchImpl = options.fetch ?? fetch;
 
     pi.registerCommand("conject-doctor", {
-      description: "Show Conject Pi paths, version, skills, and tools.",
+      description: "Show Conject paths, version, skills, and tools.",
       handler: async (_args, ctx) => {
         const text = formatDoctorInfo(getDoctorInfo(ctx.cwd));
         pi.sendMessage({
@@ -89,8 +89,8 @@ export function createConjectPiExtensionFactory(options: ConjectPiExtensionOptio
   };
 }
 
-export default function conjectPiExtension(pi: ExtensionAPI): void | Promise<void> {
-  return createConjectPiExtensionFactory()(pi);
+export default function conjectExtension(pi: ExtensionAPI): void | Promise<void> {
+  return createConjectExtensionFactory()(pi);
 }
 
 function isThinkingLevel(value: string): value is ThinkingLevelName {

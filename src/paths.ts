@@ -25,10 +25,18 @@ export function getConjectSubagentsPath(): string {
   return join(getPackageRoot(), "subagents");
 }
 
+export function getDefaultConjectHomeDir(home = homedir()): string {
+  return join(home, ".conject");
+}
+
 export function getDefaultConjectAgentDir(home = homedir()): string {
-  return join(home, ".pi-conject", "agent");
+  return join(getDefaultConjectHomeDir(home), "agent");
 }
 
 export function getDefaultProjectSessionDir(cwd = process.cwd()): string {
-  return join(cwd, ".pi", "sessions");
+  return join(cwd, ".conject", "sessions");
+}
+
+export function getDefaultCredentialStorePath(home = homedir()): string {
+  return join(getDefaultConjectHomeDir(home), "credentials.env");
 }

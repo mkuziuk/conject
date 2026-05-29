@@ -12,13 +12,13 @@ import type {
   RegisteredCommand,
   ToolDefinition
 } from "@earendil-works/pi-coding-agent";
-import { createConjectPiExtensionFactory } from "../src/extension.js";
+import { createConjectExtensionFactory } from "../src/extension.js";
 import type { ChildRunner } from "../src/tools/subagents.js";
 
-describe("Conject Pi extension", () => {
+describe("Conject extension", () => {
   it("registers minimal commands and the Conject tools", async () => {
     const pi = new FakePi();
-    await createConjectPiExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
+    await createConjectExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
 
     expect([...pi.commands.keys()].sort()).toEqual(["conject-doctor", "thinking"]);
     expect([...pi.tools.keys()].sort()).toEqual([
@@ -36,7 +36,7 @@ describe("Conject Pi extension", () => {
     const dir = mkdtempSync(join(tmpdir(), "conject-extension-"));
     try {
       const pi = new FakePi();
-      await createConjectPiExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
+      await createConjectExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
       await pi.command("conject-doctor").handler("", fakeCommandContext(dir));
 
       expect(pi.messages).toHaveLength(1);
@@ -52,7 +52,7 @@ describe("Conject Pi extension", () => {
     try {
       const failingRunner: ChildRunner = async () => ({ stdout: "", stderr: "duplicate extension conflict", exitCode: 1 });
       const pi = new FakePi();
-      await createConjectPiExtensionFactory({ childRunner: failingRunner })(pi.api);
+      await createConjectExtensionFactory({ childRunner: failingRunner })(pi.api);
 
       await expect(
         pi.tool("conject_spawn_researcher").execute(
@@ -81,7 +81,7 @@ describe("Conject Pi extension", () => {
     const dir = mkdtempSync(join(tmpdir(), "conject-extension-"));
     try {
       const pi = new FakePi();
-      await createConjectPiExtensionFactory({ childRunner: reviewerChildRunner })(pi.api);
+      await createConjectExtensionFactory({ childRunner: reviewerChildRunner })(pi.api);
       await pi
         .tool("conject_spawn_reviewer")
         .execute("tool-1", { objective: "rank ideas" }, undefined, undefined, fakeContext(dir));
@@ -96,7 +96,7 @@ describe("Conject Pi extension", () => {
     const dir = mkdtempSync(join(tmpdir(), "conject-extension-"));
     try {
       const pi = new FakePi();
-      await createConjectPiExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
+      await createConjectExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
 
       await expect(
         pi
@@ -114,7 +114,7 @@ describe("Conject Pi extension", () => {
     const dir = mkdtempSync(join(tmpdir(), "conject-extension-"));
     try {
       const pi = new FakePi();
-      await createConjectPiExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
+      await createConjectExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
       const result = await pi
         .tool("conject_present_proposal")
         .execute(
@@ -140,7 +140,7 @@ describe("Conject Pi extension", () => {
       const dir = mkdtempSync(join(tmpdir(), "conject-extension-"));
       try {
         const pi = new FakePi();
-        await createConjectPiExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
+        await createConjectExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
         mkdirSync(join(dir, "research"), { recursive: true });
         writeFileSync(join(dir, "research", "proposal.md"), "# Proposal\n\nApproved work.", "utf8");
 
@@ -160,7 +160,7 @@ describe("Conject Pi extension", () => {
     const dir = mkdtempSync(join(tmpdir(), "conject-extension-"));
     try {
       const pi = new FakePi();
-      await createConjectPiExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
+      await createConjectExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
       const ctx = fakeCommandContext(dir, pi);
 
       await pi.command("thinking").handler("", ctx);
@@ -181,7 +181,7 @@ describe("Conject Pi extension", () => {
     const dir = mkdtempSync(join(tmpdir(), "conject-extension-"));
     try {
       const pi = new FakePi();
-      await createConjectPiExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
+      await createConjectExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
       const result = await pi.tool("conject_spawn_researcher").execute(
         "tool-1",
         {
@@ -219,7 +219,7 @@ describe("Conject Pi extension", () => {
       };
       const updates: unknown[] = [];
       const pi = new FakePi();
-      await createConjectPiExtensionFactory({ childRunner: streamingRunner })(pi.api);
+      await createConjectExtensionFactory({ childRunner: streamingRunner })(pi.api);
       await pi.tool("conject_spawn_researcher").execute(
         "tool-1",
         {
@@ -248,7 +248,7 @@ describe("Conject Pi extension", () => {
     delete process.env.CONJECT_SEARXNG_URL;
     try {
       const pi = new FakePi();
-      await createConjectPiExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
+      await createConjectExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
       const result = await pi
         .tool("conject_web_search")
         .execute("tool-1", { query: "test", limit: 2 }, undefined, undefined, fakeContext(process.cwd()));
@@ -281,7 +281,7 @@ describe("Conject Pi extension", () => {
         { status: 200, headers: { "content-type": "application/json" } }
       );
     const pi = new FakePi();
-    await createConjectPiExtensionFactory({ childRunner: fixtureChildRunner, fetch: fetchImpl as typeof fetch })(pi.api);
+    await createConjectExtensionFactory({ childRunner: fixtureChildRunner, fetch: fetchImpl as typeof fetch })(pi.api);
 
     const result = await pi
       .tool("conject_paper_search")
@@ -298,7 +298,7 @@ describe("Conject Pi extension", () => {
     try {
       writeFileSync(join(dir, "source.txt"), "plain text source", "utf8");
       const pi = new FakePi();
-      await createConjectPiExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
+      await createConjectExtensionFactory({ childRunner: fixtureChildRunner })(pi.api);
       const result = await pi
         .tool("conject_extract_pdf")
         .execute("tool-1", { path: "source.txt" }, undefined, undefined, fakeContext(dir));

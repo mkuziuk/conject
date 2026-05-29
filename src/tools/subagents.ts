@@ -104,7 +104,7 @@ const ReviewerParams = Type.Object({
   maxOutputChars: Type.Optional(Type.Number({ description: "Maximum review chars to keep. Default 60000." }))
 });
 
-export function createSpawnResearcherTool(childRunner: ChildRunner = runChildPi): ToolDefinition {
+export function createSpawnResearcherTool(childRunner: ChildRunner = runChildConject): ToolDefinition {
   return {
     name: "conject_spawn_researcher",
     label: "Researcher",
@@ -181,7 +181,7 @@ export function createSpawnResearcherTool(childRunner: ChildRunner = runChildPi)
   };
 }
 
-export function createSpawnReviewerTool(childRunner: ChildRunner = runChildPi): ToolDefinition {
+export function createSpawnReviewerTool(childRunner: ChildRunner = runChildConject): ToolDefinition {
   return {
     name: "conject_spawn_reviewer",
     label: "Reviewer",
@@ -261,7 +261,7 @@ export function createSpawnReviewerTool(childRunner: ChildRunner = runChildPi): 
   };
 }
 
-export function buildChildPiArgs(input: Pick<ChildRunInput, "systemPrompt" | "task" | "tools">): string[] {
+export function buildChildConjectArgs(input: Pick<ChildRunInput, "systemPrompt" | "task" | "tools">): string[] {
   return [
     "--mode",
     "json",
@@ -277,8 +277,8 @@ export function buildChildPiArgs(input: Pick<ChildRunInput, "systemPrompt" | "ta
   ];
 }
 
-export async function runChildPi(input: ChildRunInput): Promise<ChildRunResult> {
-  const invocation = getChildInvocation(buildChildPiArgs(input));
+export async function runChildConject(input: ChildRunInput): Promise<ChildRunResult> {
+  const invocation = getChildInvocation(buildChildConjectArgs(input));
 
   return new Promise((resolve) => {
     const trace = createInitialTrace(input.task);
@@ -289,7 +289,7 @@ export async function runChildPi(input: ChildRunInput): Promise<ChildRunResult> 
       env: {
         ...process.env,
         PI_SKIP_VERSION_CHECK: "1",
-        CONJECT_PI_INTERNAL_CHILD: "1"
+        CONJECT_INTERNAL_CHILD: "1"
       }
     });
 
@@ -343,14 +343,14 @@ export async function runChildPi(input: ChildRunInput): Promise<ChildRunResult> 
 }
 
 export function getChildInvocation(args: string[]): { command: string; args: string[] } {
-  const override = process.env.CONJECT_PI_CHILD_COMMAND;
+  const override = process.env.CONJECT_CHILD_COMMAND;
   if (override) return { command: override, args };
 
   const currentScript = process.argv[1];
   if (currentScript && existsSync(currentScript)) {
     return { command: process.execPath, args: [currentScript, ...args] };
   }
-  return { command: "conject-pi", args };
+  return { command: "conject", args };
 }
 
 export function createInitialTrace(task: string): ChildRunTrace {

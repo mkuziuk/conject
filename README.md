@@ -1,10 +1,10 @@
-# Conject Pi
+# Conject
 
-Conject Pi is a small research-oriented package for Pi. It does not replace Pi with a custom TUI or hidden workflow engine. It adds a Conject launcher, a minimal system prompt, research tools, and Agent Skills for a visible research workflow.
+Conject is a small research-oriented package built on Pi. It does not replace Pi with a custom TUI or hidden workflow engine. It adds a Conject launcher, a minimal system prompt, research tools, and Agent Skills for a visible research workflow.
 
-## Setup With Pi
+## Setup
 
-Conject Pi is installed from this source repo. You do not need to install a global `pi` binary first; this package uses the pinned Pi dependency declared in `package.json`.
+Conject is installed from this source repo. You do not need to install a global `pi` binary first; this package uses the pinned Pi dependency declared in `package.json`.
 
 Before setup, install:
 
@@ -34,7 +34,7 @@ Set-Location conject
 
 SSH clone URLs also work if your GitHub SSH key is already configured.
 
-Build and link the `conject-pi` launcher. These commands are the same on all platforms:
+Build and link the `conject` launcher. These commands are the same on all platforms:
 
 ```bash
 npm install
@@ -48,19 +48,19 @@ macOS, Linux, or WSL:
 
 ```bash
 cd ~/Projects/<target-project>
-conject-pi --doctor
-conject-pi
+conject --doctor
+conject
 ```
 
 Windows PowerShell:
 
 ```powershell
 Set-Location "$HOME\Projects\<target-project>"
-conject-pi --doctor
-conject-pi
+conject --doctor
+conject
 ```
 
-The directory where you run `conject-pi` is the target project. Conject will inspect that project and write visible research artifacts there, for example `research/brief.md`, `research/review.md`, and `research/proposal.md`.
+The directory where you run `conject` is the target project. Conject will inspect that project and write visible research artifacts there, for example `research/brief.md`, `research/review.md`, and `research/proposal.md`.
 
 On Windows, use Windows Terminal or WSL for the best Pi TUI behavior.
 
@@ -73,23 +73,24 @@ Typical layout:
 
 ## Isolation
 
-`conject-pi` runs the pinned Pi dependency from this package and isolates Conject state from your normal Pi install:
+`conject` runs the pinned Pi dependency from this package and isolates Conject state from your normal Pi install:
 
-- `PI_CODING_AGENT_DIR=$HOME/.pi-conject/agent`
-- `PI_CODING_AGENT_SESSION_DIR=<target-project>/.pi/sessions`
+- `PI_CODING_AGENT_DIR=$HOME/.conject/agent`
+- `PI_CODING_AGENT_SESSION_DIR=<target-project>/.conject/sessions`
 - `PI_SKIP_VERSION_CHECK=1`
 
 It does not touch `~/.pi/agent`.
 
 Generated state and outputs:
 
-- Conject/Pi agent state: `~/.pi-conject/agent`
-- target project sessions: `<target-project>/.pi/sessions`
+- Conject agent state: `~/.conject/agent`
+- Conject credentials: `~/.conject/credentials.env`
+- target project sessions: `<target-project>/.conject/sessions`
 - target project research artifacts: `<target-project>/research/`
 
 On Windows, `~` means your user profile directory; PowerShell will show equivalent paths with backslashes.
 
-Use `conject-pi --print-env` to see the exact environment.
+Use `conject --print-env` to see the exact environment.
 
 ## Workflow
 
@@ -131,6 +132,16 @@ Web search is optional. Configure it with one of:
 - `CONJECT_SEARXNG_URL`
 
 OpenAlex paper search works without a key. Set `OPENALEX_MAILTO` if you want polite-pool OpenAlex requests.
+
+Conject loads these values from the process environment first, then from `~/.conject/credentials.env`. The process environment wins if both are set. Do not put API keys directly in `~/.zshrc`; use the private credential file instead:
+
+```bash
+conject credentials init
+printf '%s\n' '<your-tavily-key>' | conject credentials set TAVILY_API_KEY --stdin
+conject credentials status
+```
+
+The credential file is created with `0600` permissions and Conject never prints secret values in status or doctor output.
 
 ## Skills
 
